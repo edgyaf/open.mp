@@ -5,8 +5,10 @@
 resolver = "3"
 members = [
 	"Server/Components/Checkpoints/rust",
+	"Server/Components/GangZones/rust",
 	"Server/Components/Timers/rust",
 	"Server/Components/Variables/rust",
+	"Shared/rust/common",
 ]
 
 [workspace.package]
@@ -14,6 +16,9 @@ version = "1.6.7"
 edition = "2024"
 license = "MPL-2.0"
 publish = false
+
+[workspace.dependencies]
+omp-common = { path = "Shared/rust/common" }
 
 [profile.dev]
 # Unwinding into C++ is undefined behaviour.

@@ -7,6 +7,17 @@ name = "omp-checkpoints"
 version = "1.6.7"
 
 [[package]]
+name = "omp-common"
+version = "1.6.7"
+
+[[package]]
+name = "omp-gangzones"
+version = "1.6.7"
+dependencies = [
+ "omp-common",
+]
+
+[[package]]
 name = "omp-timers"
 version = "1.6.7"
 

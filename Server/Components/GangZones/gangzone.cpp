@@ -7,24 +7,17 @@
  */
 
 #include "gangzone.hpp"
-#include <legacy_id_mapper.hpp>
 
 using namespace Impl;
 
-// TODO: This internal/external IDs mapping code should be extracted for other components to use.
 class PlayerGangZoneData final : public IPlayerGangZoneData
 {
 private:
-	FiniteLegacyIDMapper<GANG_ZONE_POOL_SIZE>
+	GangZoneIDMapper
 		legacyIDs_,
 		clientIDs_;
 
 public:
-	PlayerGangZoneData()
-	{
-		reset();
-	}
-
 	virtual void freeExtension() override
 	{
 		delete this;
@@ -32,12 +25,8 @@ public:
 
 	virtual void reset() override
 	{
-		// Clear all the IDs.
-		for (int i = 0; i != GANG_ZONE_POOL_SIZE; ++i)
-		{
-			legacyIDs_.release(i);
-			clientIDs_.release(i);
-		}
+		legacyIDs_.releaseAll();
+		clientIDs_.releaseAll();
 	}
 
 	virtual int toLegacyID(int zoneid) const override
@@ -101,7 +90,7 @@ private:
 	MarkedDynamicPoolStorage<GangZone, IGangZone, Lower, Upper> storage;
 	UniqueIDArray<IGangZone, Upper> checkingList;
 	DefaultEventDispatcher<GangZoneEventHandler> eventDispatcher;
-	FiniteLegacyIDMapper<GANG_ZONE_POOL_SIZE> legacyIDs_;
+	GangZoneIDMapper legacyIDs_;
 
 public:
 	StringView componentName() const override
@@ -138,11 +127,7 @@ public:
 	{
 		checkingList.clear();
 		storage.clear();
-		// Clear all the IDs.
-		for (int i = 0; i != GANG_ZONE_POOL_SIZE; ++i)
-		{
-			legacyIDs_.release(i);
-		}
+		legacyIDs_.releaseAll();
 	}
 
 	void onPlayerConnect(IPlayer& player) override
@@ -168,16 +153,13 @@ public:
 					continue;
 				}
 
-				const GangZonePos& pos = gangzone->getPosition();
-				bool isPlayerInInsideList = gangzone->isPlayerInside(player);
-				bool isPlayerInZoneArea = playerPos.x >= pos.min.x && playerPos.x < pos.max.x && playerPos.y >= pos.min.y && playerPos.y < pos.max.y;
-
-				if (isPlayerInZoneArea && !isPlayerInInsideList)
+				const OmpGangZonesTransition transition = static_cast<GangZone*>(gangzone)->check(player, playerPos);
+				if (transition == OmpGangZonesTransition_Enter)
 				{
 					// Collect entered gangzones to call events with them later after exit events
 					enteredList.push_back(gangzone);
 				}
-				else if (!isPlayerInZoneArea && isPlayerInInsideList)
+				else if (transition == OmpGangZonesTransition_Leave)
 				{
 					// Call leave gangzone events
 					ScopedPoolReleaseLock<IGangZone> lock(*this, *gangzone);
@@ -206,21 +188,17 @@ public:
 
 	IGangZone* create(GangZonePos pos) override
 	{
-		if (pos.max.x < pos.min.x)
+		OmpGangZonesPos normalised = toRust(pos);
+		const OmpGangZonesSwapped swapped = omp_gangzones_normalise(&normalised);
+		if (swapped.x)
 		{
 			core->logLn(LogLevel::Warning, "Gangzone X co-ordinates %.2f and %.2f out of order, inverting.", pos.min.x, pos.max.x);
-			auto tmp = pos.max.x;
-			pos.max.x = pos.min.x;
-			pos.min.x = tmp;
 		}
-		if (pos.max.y < pos.min.y)
+		if (swapped.y)
 		{
 			core->logLn(LogLevel::Warning, "Gangzone Y co-ordinates %.2f and %.2f out of order, inverting.", pos.min.y, pos.max.y);
-			auto tmp = pos.max.y;
-			pos.max.y = pos.min.y;
-			pos.min.y = tmp;
 		}
-		return storage.emplace(pos);
+		return storage.emplace(fromRust(normalised));
 	}
 
 	const FlatHashSet<IGangZone*>& getCheckingGangZones() const override
@@ -327,10 +305,7 @@ public:
 				continue;
 			}
 
-			const GangZonePos& pos = gangzone->getPosition();
-			bool isClickInZoneArea = clickPos.x >= pos.min.x && clickPos.x < pos.max.x && clickPos.y >= pos.min.y && clickPos.y < pos.max.y;
-
-			if (isClickInZoneArea)
+			if (static_cast<GangZone*>(gangzone)->contains(clickPos))
 			{
 				ScopedPoolReleaseLock<IGangZone> lock(*this, *gangzone);
 				eventDispatcher.dispatch(
