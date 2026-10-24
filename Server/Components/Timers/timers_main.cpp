@@ -8,13 +8,32 @@
 
 #include "timer.hpp"
 #include <sdk.hpp>
-#include <list>
+
+// The timer logic lives in Rust (see `rust/`); this only adapts it to the SDK interfaces.
+
+static void onTimerTimeout(void* facade)
+{
+	Timer* timer = static_cast<Timer*>(facade);
+	timer->handler()->timeout(*timer);
+}
+
+static void onTimerDestroy(void* facade)
+{
+	delete static_cast<Timer*>(facade);
+}
 
 class TimersComponent final : public ITimersComponent, public CoreEventHandler
 {
 private:
 	ICore* core = nullptr;
-	std::list<Timer*> timers;
+	OmpTimersComponent* timers = omp_timers_new(&onTimerTimeout, &onTimerDestroy);
+
+	ITimer* createTimer(TimerTimeOutHandler* handler, Milliseconds initial, Milliseconds interval, unsigned int count)
+	{
+		Timer* timer = new Timer(handler);
+		timer->setState(omp_timers_create(timers, timer, initial.count(), interval.count(), count));
+		return timer;
+	}
 
 public:
 	StringView componentName() const override
@@ -40,64 +59,22 @@ public:
 			core->getEventDispatcher().removeEventHandler(this);
 		}
 
-		for (auto timer : timers)
-		{
-			delete timer;
-		}
-		timers.clear();
+		omp_timers_free(timers);
 	}
 
 	ITimer* create(TimerTimeOutHandler* handler, Milliseconds interval, bool repeating) override
 	{
-		Timer* timer = new Timer(handler, interval, interval, repeating ? 0 : 1);
-		timers.push_back(timer);
-		return timer;
+		return createTimer(handler, interval, interval, repeating ? 0 : 1);
 	}
 
 	ITimer* create(TimerTimeOutHandler* handler, Milliseconds initial, Milliseconds interval, unsigned int count) override
 	{
-		Timer* timer = new Timer(handler, initial, interval, count);
-		timers.push_back(timer);
-		return timer;
+		return createTimer(handler, initial, interval, count);
 	}
 
 	void onTick(Microseconds elapsed, TimePoint now) override
 	{
-		for (auto it = timers.begin(); it != timers.end();)
-		{
-			Timer* timer = *it;
-			bool deleteTimer = false;
-			if (!timer->running())
-			{
-				deleteTimer = true;
-			}
-			else
-			{
-				const TimePoint now = Time::now();
-				const Milliseconds diff = duration_cast<Milliseconds>(now - timer->getTimeout());
-				if (diff.count() >= 0)
-				{
-					timer->handler()->timeout(*timer);
-					if (timer->trigger())
-					{
-						timer->setTimeout(now + timer->interval() - diff);
-					}
-					else
-					{
-						deleteTimer = true;
-					}
-				}
-			}
-			if (deleteTimer)
-			{
-				delete timer;
-				it = timers.erase(it);
-			}
-			else
-			{
-				++it;
-			}
-		}
+		omp_timers_tick(timers);
 	}
 
 	void free() override
@@ -113,11 +90,7 @@ public:
 
 	const size_t count() const override
 	{
-		return std::count_if(timers.begin(), timers.end(),
-			[](Timer* timer)
-			{
-				return timer->running();
-			});
+		return omp_timers_count(timers);
 	}
 };
 

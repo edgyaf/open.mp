@@ -1,0 +1,23 @@
+# Rust port of the open.mp server, done one component at a time. Each ported component keeps a thin
+# C++ shim implementing the SDK interfaces (so vtable layout stays the C++ compiler's business) and
+# links its logic from a Rust static library built here. See `Server/Rust.cmake`.
+[workspace]
+resolver = "3"
+members = [
+	"Server/Components/Timers/rust",
+]
+
+[workspace.package]
+version = "1.6.7"
+edition = "2024"
+license = "MPL-2.0"
+publish = false
+
+[profile.dev]
+# Unwinding into C++ is undefined behaviour.
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+# The C++ side is built as RelWithDebInfo for releases.
+debug = true

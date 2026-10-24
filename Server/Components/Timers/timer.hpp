@@ -6,55 +6,46 @@
  *  The original code is copyright (c) 2022, open.mp team and contributors.
  */
 
+#include "timers_rs.hpp"
 #include <Server/Components/Timers/timers.hpp>
 
+/// `ITimer` facade over a timer owned by the Rust implementation. The state is valid for the
+/// lifetime of this object: Rust deletes the facade (through `TimersComponent`) before dropping it.
 class Timer final : public ITimer
 {
 private:
-	bool running_;
-	unsigned int count_;
-	const Milliseconds interval_;
-	TimePoint timeout_;
+	const OmpTimersTimer* state_ = nullptr;
 	TimerTimeOutHandler* const handler_;
 
 public:
-	inline TimePoint getTimeout() const
+	explicit Timer(TimerTimeOutHandler* handler)
+		: handler_(handler)
 	{
-		return timeout_;
 	}
 
-	inline void setTimeout(TimePoint timeout)
+	inline void setState(const OmpTimersTimer* state)
 	{
-		timeout_ = timeout;
-	}
-
-	Timer(TimerTimeOutHandler* handler, Milliseconds initial, Milliseconds interval, unsigned int count)
-		: running_(true)
-		, count_(count)
-		, interval_(interval)
-		, timeout_(Time::now() + initial)
-		, handler_(handler)
-	{
+		state_ = state;
 	}
 
 	bool running() const override
 	{
-		return running_;
+		return omp_timers_timer_running(state_);
 	}
 
 	Milliseconds remaining() const override
 	{
-		return duration_cast<Milliseconds>(timeout_ - Time::now());
+		return Milliseconds(omp_timers_timer_remaining(state_));
 	}
 
 	unsigned int calls() const override
 	{
-		return count_;
+		return omp_timers_timer_calls(state_);
 	}
 
 	Milliseconds interval() const override
 	{
-		return interval_;
+		return Milliseconds(omp_timers_timer_interval(state_));
 	}
 
 	TimerTimeOutHandler* handler() const override
@@ -64,26 +55,12 @@ public:
 
 	void kill() override
 	{
-		running_ = false;
+		omp_timers_timer_kill(state_);
 	}
 
 	bool trigger() override
 	{
-		if (running_ == false)
-		{
-			return false;
-		}
-		if (count_ == 0)
-		{
-			// Repeat forever.
-			return true;
-		}
-		--count_;
-		if (count_ == 0)
-		{
-			running_ = false;
-		}
-		return running_;
+		return omp_timers_timer_trigger(state_);
 	}
 
 	~Timer()

@@ -12,6 +12,12 @@ Or use SSH: `git clone --recursive git@github.com:openmultiplayer/open.mp`.
 
 If you already cloned without `--recursive`, run `git submodule update --init --recursive` from the repository root. Git checks out the submodule revisions required by the repository.
 
+## Rust
+
+Some components are being ported to Rust and are built by Cargo as part of the CMake build. Install Rust with [rustup](https://rustup.rs/); the toolchain version is pinned in `rust-toolchain.toml` and is installed automatically on first use. Add the Rust target matching your build, for example `rustup target add i686-pc-windows-msvc` for a Windows `-A Win32` build. CMake picks the target from your build settings; set `-DRUST_TARGET=<triple>` to override it.
+
+The Docker build images already include Rust.
+
 ## Windows
 
 Install [CMake 3.19 or later](https://cmake.org/), [Conan 2.x](https://conan.io/) (`pip install conan` or `pip3 install conan`), and [Visual Studio 2019 or later](https://visualstudio.microsoft.com/). In Visual Studio, select the **Desktop development with C++** workload and the **C++ Clang tools for Windows** component.

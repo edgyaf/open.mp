@@ -23,9 +23,12 @@ RUN \
 
 USER user
 
+# Rust, for components ported from C++. Keep in sync with rust-toolchain.toml.
+RUN wget -qO- https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.99.0         --target i686-unknown-linux-gnu --target x86_64-unknown-linux-gnu
+
 ENV CC=/usr/bin/clang-10 \
     CXX=/usr/bin/clang++-10 \
-    PATH=~/.local/bin:${PATH}
+    PATH=/home/user/.cargo/bin:~/.local/bin:${PATH}
 
 COPY docker-entrypoint.sh /
 CMD /docker-entrypoint.sh

@@ -42,5 +42,7 @@ function(add_server_component name)
 	set_property(TARGET ${PROJECT_NAME} PROPERTY PREFIX "")
 endfunction()
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/Rust.cmake)
+
 add_subdirectory(Source)
 add_subdirectory(Components)
