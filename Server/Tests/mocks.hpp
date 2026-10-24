@@ -14,6 +14,7 @@
 
 #include "harness.hpp"
 #include <Impl/events_impl.hpp>
+#include <bitstream.hpp>
 #include <cstdarg>
 #include <cstdio>
 #include <initializer_list>
