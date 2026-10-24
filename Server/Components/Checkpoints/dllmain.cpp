@@ -28,74 +28,30 @@ private:
 		player.addExtension(new PlayerCheckpointData(player), true);
 	}
 
-	static void processPlayerCheckpoint(CheckpointsComponent& component, IPlayer& player)
+	static void processPlayerCheckpoints(CheckpointsComponent& component, IPlayer& player)
 	{
 		PlayerCheckpointData* playerCheckpointData = queryExtension<PlayerCheckpointData>(player);
 		if (playerCheckpointData)
 		{
-			ICheckpointData& cp = playerCheckpointData->getCheckpoint();
-			if (cp.isEnabled())
+			// Event handlers may move the player or change the race checkpoint, so these run in turn.
+			const OmpCheckpointsTransition checkpoint = playerCheckpointData->updateCheckpoint(player.getPosition());
+			if (checkpoint == OmpCheckpointsTransition_Enter)
 			{
-				float radius = cp.getRadius();
-				float maxDistanceSqr = radius * radius;
-				Vector3 distanceFromCheckpoint = cp.getPosition() - player.getPosition();
-
-				if (glm::dot(distanceFromCheckpoint, distanceFromCheckpoint) > maxDistanceSqr)
-				{
-					if (cp.isPlayerInside())
-					{
-						cp.setPlayerInside(false);
-						component.eventDispatcher.dispatch(
-							&PlayerCheckpointEventHandler::onPlayerLeaveCheckpoint,
-							player);
-					}
-				}
-				else
-				{
-					if (!cp.isPlayerInside())
-					{
-						cp.setPlayerInside(true);
-						component.eventDispatcher.dispatch(
-							&PlayerCheckpointEventHandler::onPlayerEnterCheckpoint,
-							player);
-					}
-				}
+				component.eventDispatcher.dispatch(&PlayerCheckpointEventHandler::onPlayerEnterCheckpoint, player);
 			}
-		}
-	}
-
-	static void processPlayerRaceCheckpoint(CheckpointsComponent& component, IPlayer& player)
-	{
-		PlayerCheckpointData* playerCheckpointData = queryExtension<PlayerCheckpointData>(player);
-		if (playerCheckpointData)
-		{
-			IRaceCheckpointData& cp = playerCheckpointData->getRaceCheckpoint();
-			if (cp.isEnabled())
+			else if (checkpoint == OmpCheckpointsTransition_Leave)
 			{
-				float radius = cp.getRadius();
-				float maxDistanceSqr = radius * radius;
-				Vector3 distanceFromCheckpoint = cp.getPosition() - player.getPosition();
+				component.eventDispatcher.dispatch(&PlayerCheckpointEventHandler::onPlayerLeaveCheckpoint, player);
+			}
 
-				if (glm::dot(distanceFromCheckpoint, distanceFromCheckpoint) > maxDistanceSqr)
-				{
-					if (cp.isPlayerInside())
-					{
-						cp.setPlayerInside(false);
-						component.eventDispatcher.dispatch(
-							&PlayerCheckpointEventHandler::onPlayerLeaveRaceCheckpoint,
-							player);
-					}
-				}
-				else
-				{
-					if (!cp.isPlayerInside())
-					{
-						cp.setPlayerInside(true);
-						component.eventDispatcher.dispatch(
-							&PlayerCheckpointEventHandler::onPlayerEnterRaceCheckpoint,
-							player);
-					}
-				}
+			const OmpCheckpointsTransition race = playerCheckpointData->updateRaceCheckpoint(player.getPosition());
+			if (race == OmpCheckpointsTransition_Enter)
+			{
+				component.eventDispatcher.dispatch(&PlayerCheckpointEventHandler::onPlayerEnterRaceCheckpoint, player);
+			}
+			else if (race == OmpCheckpointsTransition_Leave)
+			{
+				component.eventDispatcher.dispatch(&PlayerCheckpointEventHandler::onPlayerLeaveRaceCheckpoint, player);
 			}
 		}
 	}
@@ -110,8 +66,7 @@ private:
 
 		bool onPlayerUpdate(IPlayer& player, TimePoint now) override
 		{
-			processPlayerCheckpoint(self, player);
-			processPlayerRaceCheckpoint(self, player);
+			processPlayerCheckpoints(self, player);
 			return true;
 		}
 	} playerCheckpointActionHandler;

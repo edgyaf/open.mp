@@ -8,72 +8,92 @@
 
 #pragma once
 
+#include "checkpoints_rs.hpp"
 #include <Server/Components/Checkpoints/checkpoints.hpp>
 #include <netcode.hpp>
+
+// The checkpoint state lives in Rust (see `rust/`); these only adapt it to the SDK interfaces and
+// send the packets it asks for.
+
+inline OmpCheckpointsVec3 toRust(const Vector3& v)
+{
+	return OmpCheckpointsVec3 { v.x, v.y, v.z };
+}
+
+inline Vector3 fromRust(const OmpCheckpointsVec3& v)
+{
+	return Vector3(v.x, v.y, v.z);
+}
 
 template <class T>
 struct CheckpointDataBase : public T
 {
-	Vector3 position_;
-	float radius_;
+	OmpCheckpointsCheckpoint* const cp_;
 	IPlayer& player_;
-	bool inside_;
-	bool enabled_;
 
-	CheckpointDataBase(IPlayer& player)
-		: player_(player)
-		, enabled_(false)
+	CheckpointDataBase(OmpCheckpointsCheckpoint* cp, IPlayer& player)
+		: cp_(cp)
+		, player_(player)
 	{
 	}
 
 	Vector3 getPosition() const override
 	{
-		return position_;
+		return fromRust(omp_checkpoints_cp_get_position(cp_));
 	}
 
 	void setPosition(const Vector3& position) override
 	{
-		position_ = position;
+		omp_checkpoints_cp_set_position(cp_, toRust(position));
 	}
 
 	float getRadius() const override
 	{
-		return radius_;
+		return omp_checkpoints_cp_get_radius(cp_);
 	}
 
 	void setRadius(float radius) override
 	{
-		radius_ = radius;
+		omp_checkpoints_cp_set_radius(cp_, radius);
 	}
 
 	bool isPlayerInside() const override
 	{
-		return inside_;
+		return omp_checkpoints_cp_is_inside(cp_);
 	}
 
 	void setPlayerInside(bool inside) override
 	{
-		inside_ = inside;
+		omp_checkpoints_cp_set_inside(cp_, inside);
+	}
+
+	bool isEnabled() const override
+	{
+		return omp_checkpoints_cp_is_enabled(cp_);
+	}
+
+	/// Track whether the player is inside, returning whether they just entered or left.
+	OmpCheckpointsTransition update(const Vector3& playerPosition)
+	{
+		return omp_checkpoints_cp_update(cp_, toRust(playerPosition));
 	}
 };
 
 class CheckpointData final : public CheckpointDataBase<ICheckpointData>
 {
 public:
-	CheckpointData(IPlayer& player)
-		: CheckpointDataBase<ICheckpointData>(player)
+	CheckpointData(OmpCheckpointsCheckpoint* cp, IPlayer& player)
+		: CheckpointDataBase<ICheckpointData>(cp, player)
 	{
 	}
 
 	void enable() override
 	{
-		if (enabled_)
+		if (omp_checkpoints_cp_enable(cp_))
 		{
-			disable();
+			NetCode::RPC::DisableCheckpoint disableCP;
+			PacketHelper::send(disableCP, player_);
 		}
-
-		enabled_ = true;
-		setPlayerInside(false);
 
 		NetCode::RPC::SetCheckpoint setCP;
 		setCP.position = getPosition();
@@ -83,111 +103,90 @@ public:
 
 	void disable() override
 	{
-		if (enabled_)
+		if (omp_checkpoints_cp_disable(cp_))
 		{
-			enabled_ = false;
-			setPlayerInside(false);
-
 			NetCode::RPC::DisableCheckpoint disableCP;
 			PacketHelper::send(disableCP, player_);
 		}
-	}
-
-	bool isEnabled() const override
-	{
-		return enabled_;
-	}
-
-	void reset()
-	{
-		enabled_ = false;
 	}
 };
 
 class RaceCheckpointData final : public CheckpointDataBase<IRaceCheckpointData>
 {
 private:
-	RaceCheckpointType type_ = RaceCheckpointType::RACE_NONE;
-	Vector3 nextPosition_;
+	OmpCheckpointsRace* const race_;
 
 public:
-	RaceCheckpointData(IPlayer& player)
-		: CheckpointDataBase<IRaceCheckpointData>(player)
+	RaceCheckpointData(OmpCheckpointsRace* race, IPlayer& player)
+		: CheckpointDataBase<IRaceCheckpointData>(omp_checkpoints_race_base(race), player)
+		, race_(race)
 	{
 	}
 
 	RaceCheckpointType getType() const override
 	{
-		return type_;
+		return RaceCheckpointType(omp_checkpoints_race_get_type(race_));
 	}
 
 	void setType(const RaceCheckpointType type) override
 	{
-		type_ = type;
+		omp_checkpoints_race_set_type(race_, static_cast<int32_t>(type));
 	}
 
 	Vector3 getNextPosition() const override
 	{
-		return nextPosition_;
+		return fromRust(omp_checkpoints_race_get_next_position(race_));
 	}
 
 	void setNextPosition(const Vector3& nextPosition) override
 	{
-		nextPosition_ = nextPosition;
+		omp_checkpoints_race_set_next_position(race_, toRust(nextPosition));
 	}
 
 	void enable() override
 	{
-		if (enabled_)
+		if (omp_checkpoints_cp_enable(cp_))
 		{
-			disable();
+			NetCode::RPC::DisableRaceCheckpoint disableRaceCP;
+			PacketHelper::send(disableRaceCP, player_);
 		}
 
-		setPlayerInside(false);
-		enabled_ = true;
-
 		NetCode::RPC::SetRaceCheckpoint setRaceCP;
-		setRaceCP.type = static_cast<uint8_t>(type_);
+		setRaceCP.type = static_cast<uint8_t>(getType());
 		setRaceCP.position = getPosition();
-		setRaceCP.nextPosition = nextPosition_;
+		setRaceCP.nextPosition = getNextPosition();
 		setRaceCP.size = getRadius(); // samp client asks for radius for race checkpoints
 		PacketHelper::send(setRaceCP, player_);
 	}
 
 	void disable() override
 	{
-		if (enabled_)
+		if (omp_checkpoints_cp_disable(cp_))
 		{
-			setPlayerInside(false);
-			enabled_ = false;
-
 			NetCode::RPC::DisableRaceCheckpoint disableRaceCP;
 			PacketHelper::send(disableRaceCP, player_);
 		}
-	}
-
-	bool isEnabled() const override
-	{
-		return enabled_;
-	}
-
-	void reset()
-	{
-		enabled_ = false;
 	}
 };
 
 class PlayerCheckpointData final : public IPlayerCheckpointData
 {
 private:
+	OmpCheckpointsPlayer* const data_;
 	RaceCheckpointData raceCheckpoint;
 	CheckpointData checkpoint;
 
 public:
 	PlayerCheckpointData(IPlayer& player)
-		: raceCheckpoint(player)
-		, checkpoint(player)
+		: data_(omp_checkpoints_player_new())
+		, raceCheckpoint(omp_checkpoints_player_race(data_), player)
+		, checkpoint(omp_checkpoints_player_checkpoint(data_), player)
 	{
+	}
+
+	~PlayerCheckpointData()
+	{
+		omp_checkpoints_player_free(data_);
 	}
 
 	void freeExtension() override
@@ -205,9 +204,18 @@ public:
 		return checkpoint;
 	}
 
+	OmpCheckpointsTransition updateCheckpoint(const Vector3& playerPosition)
+	{
+		return checkpoint.update(playerPosition);
+	}
+
+	OmpCheckpointsTransition updateRaceCheckpoint(const Vector3& playerPosition)
+	{
+		return raceCheckpoint.update(playerPosition);
+	}
+
 	void reset() override
 	{
-		raceCheckpoint.reset();
-		checkpoint.reset();
+		omp_checkpoints_player_reset(data_);
 	}
 };
