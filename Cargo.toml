@@ -22,6 +22,7 @@ publish = false
 
 [workspace.dependencies]
 omp-common = { path = "Shared/rust/common" }
+omp-netcode = { path = "Shared/rust/netcode" }
 
 [profile.dev]
 # Unwinding into C++ is undefined behaviour.

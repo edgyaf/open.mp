@@ -8,6 +8,7 @@
 
 #include "pickup.hpp"
 #include <Impl/events_impl.hpp>
+#include <netcode_rs.hpp>
 
 using namespace Impl;
 
@@ -105,7 +106,7 @@ private:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::OnPlayerPickUpPickup onPlayerPickUpPickupRPC;
-			if (!onPlayerPickUpPickupRPC.read(bs))
+			if (!NetCode::Rust::read(bs, onPlayerPickUpPickupRPC))
 			{
 				return false;
 			}

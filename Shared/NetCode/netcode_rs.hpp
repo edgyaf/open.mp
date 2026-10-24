@@ -248,8 +248,115 @@ extern "C"
 	bool omp_netcode_read_death(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeDeath* out);
 	bool omp_netcode_read_camera_target(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeCameraTarget* out);
 	bool omp_netcode_read_client_check_response(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeClientCheckResponse* out);
+	struct OmpNetcodeRequestClass
+	{
+		int32_t classID;
+	};
+
+	struct OmpNetcodeDialogResponse
+	{
+		int32_t id;
+		uint8_t response;
+		int32_t listItem;
+		OmpNetcodeMessage text;
+	};
+
+	struct OmpNetcodeSelectedMenuRow
+	{
+		uint8_t row;
+	};
+
+	struct OmpNetcodeSelectObject
+	{
+		int32_t selectType;
+		int32_t objectID;
+		int32_t model;
+		OmpNetcodeVec3 position;
+	};
+
+	struct OmpNetcodeEditObject
+	{
+		bool playerObject;
+		int32_t objectID;
+		int32_t response;
+		OmpNetcodeVec3 offset;
+		OmpNetcodeVec3 rotation;
+	};
+
+	struct OmpNetcodeEditAttachedObject
+	{
+		uint32_t response;
+		uint32_t index;
+		int32_t model;
+		int32_t bone;
+		OmpNetcodeVec3 offset;
+		OmpNetcodeVec3 rotation;
+		OmpNetcodeVec3 scale;
+		/// ARGB, as sent.
+		uint32_t colour1;
+		uint32_t colour2;
+	};
+
+	struct OmpNetcodePickUpPickup
+	{
+		int32_t pickupID;
+	};
+
+	struct OmpNetcodeSelectTextDraw
+	{
+		bool playerTextDraw;
+		bool invalid;
+		int32_t textDrawID;
+	};
+
+	struct OmpNetcodeEnterVehicle
+	{
+		int32_t vehicleID;
+		uint8_t passenger;
+	};
+
+	struct OmpNetcodeVehicleID
+	{
+		int32_t vehicleID;
+	};
+
+	struct OmpNetcodeVehicleDamageStatus
+	{
+		int32_t vehicleID;
+		uint32_t doorStatus;
+		uint32_t panelStatus;
+		uint8_t lightStatus;
+		uint8_t tyreStatus;
+	};
+
+	struct OmpNetcodeScmEvent
+	{
+		int32_t vehicleID;
+		uint32_t arg1;
+		uint32_t arg2;
+		uint32_t eventType;
+	};
+
+	/// Returns a buffer of at least `len` bytes for a decoded string, or null to fail the decode.
+	typedef uint8_t* (*OmpNetcodeReserveString)(void* context, size_t len);
+
 	bool omp_netcode_read_chat_message(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeChatMessage* out);
 	bool omp_netcode_read_command_message(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeCommandMessage* out);
+
+	bool omp_netcode_read_damage_actor(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeGiveTakeDamage* out);
+	bool omp_netcode_read_request_class(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeRequestClass* out);
+	bool omp_netcode_read_dialog_response(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeDialogResponse* out);
+	bool omp_netcode_read_selected_menu_row(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeSelectedMenuRow* out);
+	bool omp_netcode_read_select_object(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeSelectObject* out);
+	bool omp_netcode_read_edit_object(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeEditObject* out);
+	bool omp_netcode_read_edit_attached_object(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeEditAttachedObject* out);
+	bool omp_netcode_read_pick_up_pickup(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodePickUpPickup* out);
+	bool omp_netcode_read_select_textdraw(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeSelectTextDraw* out);
+	bool omp_netcode_read_enter_vehicle(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeEnterVehicle* out);
+	bool omp_netcode_read_vehicle_id(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeVehicleID* out);
+	bool omp_netcode_read_vehicle_damage_status(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeVehicleDamageStatus* out);
+	bool omp_netcode_read_scm_event(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeScmEvent* out);
+	bool omp_netcode_read_rcon_command(const uint8_t* data, size_t bits, size_t* offset, void* context, OmpNetcodeReserveString reserve);
 
 	int8_t omp_netcode_weapon_slot(uint8_t weapon);
 	bool omp_netcode_weapon_shootable(uint8_t weapon);
@@ -286,6 +393,18 @@ static_assert(sizeof(OmpNetcodeCameraTarget) == 16, "OmpNetcodeCameraTarget layo
 static_assert(sizeof(OmpNetcodeClientCheckResponse) == 12, "OmpNetcodeClientCheckResponse layout differs from Rust");
 static_assert(sizeof(OmpNetcodeChatMessage) == 260, "OmpNetcodeChatMessage layout differs from Rust");
 static_assert(sizeof(OmpNetcodeCommandMessage) == 260, "OmpNetcodeCommandMessage layout differs from Rust");
+static_assert(sizeof(OmpNetcodeRequestClass) == 4, "OmpNetcodeRequestClass layout differs from Rust");
+static_assert(sizeof(OmpNetcodeDialogResponse) == 272, "OmpNetcodeDialogResponse layout differs from Rust");
+static_assert(sizeof(OmpNetcodeSelectedMenuRow) == 1, "OmpNetcodeSelectedMenuRow layout differs from Rust");
+static_assert(sizeof(OmpNetcodeSelectObject) == 24, "OmpNetcodeSelectObject layout differs from Rust");
+static_assert(sizeof(OmpNetcodeEditObject) == 36, "OmpNetcodeEditObject layout differs from Rust");
+static_assert(sizeof(OmpNetcodeEditAttachedObject) == 60, "OmpNetcodeEditAttachedObject layout differs from Rust");
+static_assert(sizeof(OmpNetcodePickUpPickup) == 4, "OmpNetcodePickUpPickup layout differs from Rust");
+static_assert(sizeof(OmpNetcodeSelectTextDraw) == 8, "OmpNetcodeSelectTextDraw layout differs from Rust");
+static_assert(sizeof(OmpNetcodeEnterVehicle) == 8, "OmpNetcodeEnterVehicle layout differs from Rust");
+static_assert(sizeof(OmpNetcodeVehicleID) == 4, "OmpNetcodeVehicleID layout differs from Rust");
+static_assert(sizeof(OmpNetcodeVehicleDamageStatus) == 16, "OmpNetcodeVehicleDamageStatus layout differs from Rust");
+static_assert(sizeof(OmpNetcodeScmEvent) == 16, "OmpNetcodeScmEvent layout differs from Rust");
 
 namespace NetCode
 {
@@ -580,6 +699,171 @@ namespace Rust
 			{
 				detail::toCpp(r.message, out.message);
 			});
+	}
+
+	/// RPCs and packets handled by components. Truncated `OnPlayerEnterVehicle`,
+	/// `SetVehicleDamageStatus`, `SCMEvent` and `OnPlayerDialogResponse` RPCs are rejected rather
+	/// than read with fields left uninitialised.
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerDamageActor& out)
+	{
+		return detail::decode(bs, omp_netcode_read_damage_actor, [&out](const OmpNetcodeGiveTakeDamage& r)
+			{
+				out.Unknown = r.taking;
+				out.ActorID = r.playerID;
+				out.Damage = r.damage;
+				out.WeaponID = r.weaponID;
+				out.Bodypart = r.bodypart;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::PlayerRequestClass& out)
+	{
+		return detail::decode(bs, omp_netcode_read_request_class, [&out](const OmpNetcodeRequestClass& r)
+			{
+				out.Classid = r.classID;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerDialogResponse& out)
+	{
+		return detail::decode(bs, omp_netcode_read_dialog_response, [&out](const OmpNetcodeDialogResponse& r)
+			{
+				out.ID = r.id;
+				out.Response = r.response;
+				out.ListItem = r.listItem;
+				detail::toCpp(r.text, out.Text);
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerSelectedMenuRow& out)
+	{
+		return detail::decode(bs, omp_netcode_read_selected_menu_row, [&out](const OmpNetcodeSelectedMenuRow& r)
+			{
+				out.MenuRow = r.row;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerSelectObject& out)
+	{
+		return detail::decode(bs, omp_netcode_read_select_object, [&out](const OmpNetcodeSelectObject& r)
+			{
+				out.SelectType = r.selectType;
+				out.ObjectID = r.objectID;
+				out.Model = r.model;
+				out.Position = detail::toCpp(r.position);
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerEditObject& out)
+	{
+		return detail::decode(bs, omp_netcode_read_edit_object, [&out](const OmpNetcodeEditObject& r)
+			{
+				out.PlayerObject = r.playerObject;
+				out.ObjectID = r.objectID;
+				out.Response = r.response;
+				out.Offset = detail::toCpp(r.offset);
+				out.Rotation = detail::toCpp(r.rotation);
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerEditAttachedObject& out)
+	{
+		return detail::decode(bs, omp_netcode_read_edit_attached_object, [&out](const OmpNetcodeEditAttachedObject& r)
+			{
+				out.Response = r.response;
+				out.Index = r.index;
+				out.AttachmentData.model = r.model;
+				out.AttachmentData.bone = r.bone;
+				out.AttachmentData.offset = detail::toCpp(r.offset);
+				out.AttachmentData.rotation = detail::toCpp(r.rotation);
+				out.AttachmentData.scale = detail::toCpp(r.scale);
+				out.AttachmentData.colour1 = Colour::FromARGB(r.colour1);
+				out.AttachmentData.colour2 = Colour::FromARGB(r.colour2);
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerPickUpPickup& out)
+	{
+		return detail::decode(bs, omp_netcode_read_pick_up_pickup, [&out](const OmpNetcodePickUpPickup& r)
+			{
+				out.PickupID = r.pickupID;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerSelectTextDraw& out)
+	{
+		return detail::decode(bs, omp_netcode_read_select_textdraw, [&out](const OmpNetcodeSelectTextDraw& r)
+			{
+				out.PlayerTextDraw = r.playerTextDraw;
+				out.Invalid = r.invalid;
+				out.TextDrawID = r.textDrawID;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerEnterVehicle& out)
+	{
+		return detail::decode(bs, omp_netcode_read_enter_vehicle, [&out](const OmpNetcodeEnterVehicle& r)
+			{
+				out.VehicleID = r.vehicleID;
+				out.Passenger = r.passenger;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerExitVehicle& out)
+	{
+		return detail::decode(bs, omp_netcode_read_vehicle_id, [&out](const OmpNetcodeVehicleID& r)
+			{
+				out.VehicleID = r.vehicleID;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::VehicleDeath& out)
+	{
+		return detail::decode(bs, omp_netcode_read_vehicle_id, [&out](const OmpNetcodeVehicleID& r)
+			{
+				out.VehicleID = r.vehicleID;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::SetVehicleDamageStatus& out)
+	{
+		return detail::decode(bs, omp_netcode_read_vehicle_damage_status, [&out](const OmpNetcodeVehicleDamageStatus& r)
+			{
+				out.VehicleID = r.vehicleID;
+				out.DoorStatus = r.doorStatus;
+				out.PanelStatus = r.panelStatus;
+				out.LightStatus = r.lightStatus;
+				out.TyreStatus = r.tyreStatus;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::SCMEvent& out)
+	{
+		return detail::decode(bs, omp_netcode_read_scm_event, [&out](const OmpNetcodeScmEvent& r)
+			{
+				out.VehicleID = r.vehicleID;
+				out.Arg1 = r.arg1;
+				out.Arg2 = r.arg2;
+				out.EventType = r.eventType;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, Packet::PlayerRconCommand& out)
+	{
+		size_t offset = size_t(bs.GetReadOffset());
+		const auto reserve = [](void* context, size_t len)
+		{
+			HybridString<64>& cmd = *static_cast<HybridString<64>*>(context);
+			cmd.reserve(len);
+			return reinterpret_cast<uint8_t*>(cmd.data());
+		};
+		if (!omp_netcode_read_rcon_command(bs.GetData(), size_t(bs.GetNumberOfBitsUsed()), &offset, &out.cmd, reserve))
+		{
+			return false;
+		}
+		bs.SetReadOffset(int(offset));
+		return true;
 	}
 
 	/// Checks and fix-ups for decoded sync data (`checks.rs`).

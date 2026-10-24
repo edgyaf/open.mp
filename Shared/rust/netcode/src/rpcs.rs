@@ -202,24 +202,26 @@ impl Message {
 		&self.data[..self.len as usize]
 	}
 
-	/// `NetworkBitStream::Read(char*, len)`, which accepts an empty read only on a byte boundary
-	/// (otherwise it goes through `ReadBits`, which rejects reading nothing).
-	fn read_bytes(r: &mut BitReader, len: usize) -> Option<Self> {
-		if len == 0 && !r.is_byte_aligned() {
-			return None;
-		}
-		if r.unread_bits() < len * 8 {
-			return None;
-		}
-		let mut message = Self {
-			len: len as u32,
-			..Self::default()
-		};
-		for byte in message.data.get_mut(..len)? {
-			*byte = r.read_u8()?;
-		}
+	pub(crate) fn read_bytes(r: &mut BitReader, len: usize) -> Option<Self> {
+		let mut message = Self::default();
+		let bytes = message.data.get_mut(..len)?;
+		bytes.copy_from_slice(&read_string_bytes(r, len as u32)?);
+		message.len = len as u32;
 		Some(message)
 	}
+}
+
+/// The `len` bytes of a string, as `NetworkBitStream::Read(char*, len)` reads them after a length
+/// prefix: they must all be there, and an empty read is accepted only on a byte boundary
+/// (otherwise it goes through `ReadBits`, which rejects reading nothing).
+pub(crate) fn read_string_bytes(r: &mut BitReader, len: u32) -> Option<Vec<u8>> {
+	if len == 0 && !r.is_byte_aligned() {
+		return None;
+	}
+	if (r.unread_bits() as u64) < u64::from(len) * 8 {
+		return None;
+	}
+	(0..len).map(|_| r.read_u8()).collect()
 }
 
 /// `PlayerRequestChatMessage`: a message prefixed by its length in a byte.

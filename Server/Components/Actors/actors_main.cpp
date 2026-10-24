@@ -8,6 +8,7 @@
 
 #include "actor.hpp"
 #include <Server/Components/Fixes/fixes.hpp>
+#include <netcode_rs.hpp>
 #include <utils.hpp>
 
 class ActorsComponent final : public IActorsComponent, public PlayerConnectEventHandler, public PlayerUpdateEventHandler, public PoolEventHandler<IPlayer>
@@ -32,7 +33,7 @@ private:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::OnPlayerDamageActor onPlayerDamageActorRPC;
-			if (!onPlayerDamageActorRPC.read(bs))
+			if (!NetCode::Rust::read(bs, onPlayerDamageActorRPC))
 			{
 				return false;
 			}

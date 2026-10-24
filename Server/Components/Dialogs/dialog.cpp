@@ -9,6 +9,7 @@
 #include <Impl/events_impl.hpp>
 #include <Server/Components/Dialogs/dialogs.hpp>
 #include <netcode.hpp>
+#include <netcode_rs.hpp>
 
 using namespace Impl;
 
@@ -143,7 +144,7 @@ private:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::OnPlayerDialogResponse sendDialogResponse;
-			if (!sendDialogResponse.read(bs))
+			if (!NetCode::Rust::read(bs, sendDialogResponse))
 			{
 				return false;
 			}

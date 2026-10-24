@@ -10,6 +10,7 @@
 #include <Server/Components/Classes/classes.hpp>
 #include <Server/Components/CustomModels/custommodels.hpp>
 #include <netcode.hpp>
+#include <netcode_rs.hpp>
 
 using namespace Impl;
 
@@ -143,7 +144,7 @@ private:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::PlayerRequestClass playerRequestClassPacket;
-			if (!playerRequestClassPacket.read(bs))
+			if (!NetCode::Rust::read(bs, playerRequestClassPacket))
 			{
 				return false;
 			}

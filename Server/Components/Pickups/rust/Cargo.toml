@@ -12,3 +12,4 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 omp-common.workspace = true
+omp-netcode.workspace = true

@@ -9,6 +9,7 @@
 #include "textdraw.hpp"
 #include <Impl/pool_impl.hpp>
 #include <netcode.hpp>
+#include <netcode_rs.hpp>
 
 using namespace Impl;
 
@@ -146,7 +147,7 @@ public:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::OnPlayerSelectTextDraw RPC;
-			if (!RPC.read(bs))
+			if (!NetCode::Rust::read(bs, RPC))
 			{
 				return false;
 			}

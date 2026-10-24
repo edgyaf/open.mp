@@ -208,10 +208,10 @@ enum class Expect
 /// inputs where the C++ reads fields that aren't there; for those the C++ isn't run (it would
 /// read uninitialised memory or assert) and the Rust must reject.
 template <class Packet, class Generate, class Compare, class Expectation>
-void differential(Generate generate, Compare compare, Expectation expect)
+void differential(Generate generate, Compare compare, Expectation expect, bool hasExpectations = true)
 {
 	Rng rng;
-	int accepted = 0, rejected = 0, mismatches = 0, portedMismatches = 0;
+	int accepted = 0, rejected = 0, ported = 0, mismatches = 0, portedMismatches = 0;
 
 	for (int i = 0; i < 100000; ++i)
 	{
@@ -244,6 +244,7 @@ void differential(Generate generate, Compare compare, Expectation expect)
 			else
 			{
 				++rejected;
+				++ported;
 			}
 			continue;
 		}
@@ -286,15 +287,19 @@ void differential(Generate generate, Compare compare, Expectation expect)
 	// Make sure both paths were actually exercised.
 	CHECK(accepted > 5000);
 	CHECK(rejected > 2000);
+	// And that the inputs the Rust rejects on purpose actually came up.
+	CHECK(!hasExpectations || ported >= 50);
 }
 
 template <class Packet, class Generate, class Compare>
 void differential(Generate generate, Compare compare)
 {
-	differential<Packet>(generate, compare, [](const std::vector<uint8_t>&, int)
+	differential<Packet>(
+		generate, compare, [](const std::vector<uint8_t>&, int)
 		{
 			return Expect::Same;
-		});
+		},
+		false);
 }
 
 /// Mostly printable bytes for a message, `len` long.
@@ -516,7 +521,7 @@ TEST_CASE(netcode_click_player_matches_cpp)
 		{
 			// The C++ accepts these with an unread player ID.
 			const int bits = bitsAfter(data, skip);
-			return bits >= 8 && bits < 24 ? Expect::RustRejects : Expect::Same;
+			return bits >= 8 && bits < 16 ? Expect::RustRejects : Expect::Same;
 		});
 }
 
@@ -597,7 +602,8 @@ TEST_CASE(netcode_client_check_matches_cpp)
 		});
 }
 
-bool sameMessage(const HybridString<128>& a, const HybridString<128>& b)
+template <size_t Size>
+bool sameMessage(const HybridString<Size>& a, const HybridString<Size>& b)
 {
 	return a.length() == b.length() && std::memcmp(a.data(), b.data(), a.length()) == 0;
 }
@@ -647,5 +653,284 @@ TEST_CASE(netcode_command_message_matches_cpp)
 		[](const NetCode::RPC::PlayerRequestCommandMessage& c, const NetCode::RPC::PlayerRequestCommandMessage& r)
 		{
 			return sameMessage(c.message, r.message);
+		});
+}
+
+TEST_CASE(netcode_damage_actor_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerDamageActor>(
+		[](Rng& rng)
+		{
+			NetworkBitStream bs;
+			bs.writeBIT(rng.chance(50));
+			bs.writeUINT16(rng.range(0, 1100));
+			bs.writeFLOAT(rng.edgyFloat(200.0f));
+			bs.writeUINT32(rng.chance(80) ? rng.range(0, 60) : rng.range(0, 1 << 30));
+			bs.writeUINT32(rng.chance(80) ? rng.range(0, 10) : rng.range(0, 1 << 30));
+			return std::vector<uint8_t>(bs.GetData(), bs.GetData() + bitsToBytes(bs.GetNumberOfBitsUsed()));
+		},
+		[](const NetCode::RPC::OnPlayerDamageActor& c, const NetCode::RPC::OnPlayerDamageActor& r)
+		{
+			return c.Unknown == r.Unknown && c.ActorID == r.ActorID && sameBits(c.Damage, r.Damage) && c.WeaponID == r.WeaponID && c.Bodypart == r.Bodypart;
+		});
+}
+
+TEST_CASE(netcode_request_class_matches_cpp)
+{
+	differential<NetCode::RPC::PlayerRequestClass>(
+		[](Rng& rng)
+		{
+			return build(rng, { U16 });
+		},
+		[](const NetCode::RPC::PlayerRequestClass& c, const NetCode::RPC::PlayerRequestClass& r)
+		{
+			return c.Classid == r.Classid;
+		});
+}
+
+TEST_CASE(netcode_dialog_response_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerDialogResponse>(
+		[](Rng& rng)
+		{
+			if (rng.chance(5))
+			{
+				// Cut short after the response, with a byte that reads as an empty text's length.
+				auto data = build(rng, { U16, U8 });
+				data.push_back(0);
+				return data;
+			}
+			auto data = build(rng, { U16, U8, U16 });
+			const int len = rng.chance(5) ? 0 : rng.range(1, 255);
+			data.push_back(uint8_t(lengthFor(rng, len, 255)));
+			appendText(rng, data, len);
+			return data;
+		},
+		[](const NetCode::RPC::OnPlayerDialogResponse& c, const NetCode::RPC::OnPlayerDialogResponse& r)
+		{
+			return c.ID == r.ID && c.Response == r.Response && c.ListItem == r.ListItem && sameMessage(c.Text, r.Text);
+		},
+		[](const std::vector<uint8_t>& data, int skip)
+		{
+			const int bits = bitsAfter(data, skip);
+			// Too short for the list item but long enough for an empty text's length: the C++
+			// accepts with an unread list item.
+			if (bits >= 32 && bits < 40 && byteAt(data, skip + 24) == 0)
+			{
+				return Expect::RustRejects;
+			}
+			// An empty text off a byte boundary asserts in `ReadBits`.
+			if (bits >= 48 && byteAt(data, skip + 40) == 0 && skip % 8 != 0)
+			{
+				return Expect::RustRejects;
+			}
+			return Expect::Same;
+		});
+}
+
+TEST_CASE(netcode_selected_menu_row_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerSelectedMenuRow>(
+		[](Rng& rng)
+		{
+			return build(rng, { U8 });
+		},
+		[](const NetCode::RPC::OnPlayerSelectedMenuRow& c, const NetCode::RPC::OnPlayerSelectedMenuRow& r)
+		{
+			return c.MenuRow == r.MenuRow;
+		});
+}
+
+TEST_CASE(netcode_select_object_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerSelectObject>(
+		[](Rng& rng)
+		{
+			return build(rng, { U32, U16, U32, floats(3, 3000.0f) });
+		},
+		[](const NetCode::RPC::OnPlayerSelectObject& c, const NetCode::RPC::OnPlayerSelectObject& r)
+		{
+			return c.SelectType == r.SelectType && c.ObjectID == r.ObjectID && c.Model == r.Model && same(c.Position, r.Position);
+		});
+}
+
+TEST_CASE(netcode_edit_object_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerEditObject>(
+		[](Rng& rng)
+		{
+			NetworkBitStream bs;
+			bs.writeBIT(rng.chance(50));
+			bs.writeUINT16(rng.range(0, 2100));
+			bs.writeUINT32(rng.range(0, 3));
+			for (int i = 0; i < 6; ++i)
+			{
+				bs.writeFLOAT(rng.edgyFloat(i < 3 ? 3000.0f : 360.0f));
+			}
+			return std::vector<uint8_t>(bs.GetData(), bs.GetData() + bitsToBytes(bs.GetNumberOfBitsUsed()));
+		},
+		[](const NetCode::RPC::OnPlayerEditObject& c, const NetCode::RPC::OnPlayerEditObject& r)
+		{
+			return c.PlayerObject == r.PlayerObject && c.ObjectID == r.ObjectID && c.Response == r.Response && same(c.Offset, r.Offset) && same(c.Rotation, r.Rotation);
+		});
+}
+
+TEST_CASE(netcode_edit_attached_object_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerEditAttachedObject>(
+		[](Rng& rng)
+		{
+			return build(rng, { U32, U32, U32, U32, floats(3, 2.0f), floats(3, 360.0f), floats(3, 2.0f), U32, U32 });
+		},
+		[](const NetCode::RPC::OnPlayerEditAttachedObject& c, const NetCode::RPC::OnPlayerEditAttachedObject& r)
+		{
+			const ObjectAttachmentSlotData& a = c.AttachmentData;
+			const ObjectAttachmentSlotData& b = r.AttachmentData;
+			return c.Response == r.Response && c.Index == r.Index && a.model == b.model && a.bone == b.bone
+				&& same(a.offset, b.offset) && same(a.rotation, b.rotation) && same(a.scale, b.scale)
+				&& a.colour1.RGBA() == b.colour1.RGBA() && a.colour2.RGBA() == b.colour2.RGBA();
+		});
+}
+
+TEST_CASE(netcode_pick_up_pickup_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerPickUpPickup>(
+		[](Rng& rng)
+		{
+			return build(rng, { U32 });
+		},
+		[](const NetCode::RPC::OnPlayerPickUpPickup& c, const NetCode::RPC::OnPlayerPickUpPickup& r)
+		{
+			return c.PickupID == r.PickupID;
+		});
+}
+
+TEST_CASE(netcode_select_textdraw_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerSelectTextDraw>(
+		[](Rng& rng)
+		{
+			const int id = rng.chance(10) ? 0xFFFF : rng.range(0, 2048 + 256);
+			return std::vector<uint8_t> { uint8_t(id), uint8_t(id >> 8) };
+		},
+		[](const NetCode::RPC::OnPlayerSelectTextDraw& c, const NetCode::RPC::OnPlayerSelectTextDraw& r)
+		{
+			// The C++ leaves PlayerTextDraw unset for a cancelled selection.
+			return c.Invalid == r.Invalid && c.TextDrawID == r.TextDrawID && (c.Invalid || c.PlayerTextDraw == r.PlayerTextDraw);
+		});
+}
+
+TEST_CASE(netcode_enter_vehicle_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerEnterVehicle>(
+		[](Rng& rng)
+		{
+			return build(rng, { U16, U8 });
+		},
+		[](const NetCode::RPC::OnPlayerEnterVehicle& c, const NetCode::RPC::OnPlayerEnterVehicle& r)
+		{
+			return c.VehicleID == r.VehicleID && c.Passenger == r.Passenger;
+		},
+		[](const std::vector<uint8_t>& data, int skip)
+		{
+			// The C++ accepts these with an unread vehicle ID.
+			const int bits = bitsAfter(data, skip);
+			return bits >= 8 && bits < 16 ? Expect::RustRejects : Expect::Same;
+		});
+}
+
+TEST_CASE(netcode_exit_vehicle_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerExitVehicle>(
+		[](Rng& rng)
+		{
+			return build(rng, { U16 });
+		},
+		[](const NetCode::RPC::OnPlayerExitVehicle& c, const NetCode::RPC::OnPlayerExitVehicle& r)
+		{
+			return c.VehicleID == r.VehicleID;
+		});
+}
+
+TEST_CASE(netcode_vehicle_death_matches_cpp)
+{
+	differential<NetCode::RPC::VehicleDeath>(
+		[](Rng& rng)
+		{
+			return build(rng, { U16 });
+		},
+		[](const NetCode::RPC::VehicleDeath& c, const NetCode::RPC::VehicleDeath& r)
+		{
+			return c.VehicleID == r.VehicleID;
+		});
+}
+
+TEST_CASE(netcode_vehicle_damage_status_matches_cpp)
+{
+	differential<NetCode::RPC::SetVehicleDamageStatus>(
+		[](Rng& rng)
+		{
+			return build(rng, { U16, U32, U32, U8, U8 });
+		},
+		[](const NetCode::RPC::SetVehicleDamageStatus& c, const NetCode::RPC::SetVehicleDamageStatus& r)
+		{
+			return c.VehicleID == r.VehicleID && c.PanelStatus == r.PanelStatus && c.DoorStatus == r.DoorStatus
+				&& c.LightStatus == r.LightStatus && c.TyreStatus == r.TyreStatus;
+		},
+		[](const std::vector<uint8_t>& data, int skip)
+		{
+			// The C++ accepts these with the panel or door status unread.
+			const int bits = bitsAfter(data, skip);
+			return (bits >= 32 && bits < 48) || (bits >= 64 && bits < 80) ? Expect::RustRejects : Expect::Same;
+		});
+}
+
+TEST_CASE(netcode_scm_event_matches_cpp)
+{
+	differential<NetCode::RPC::SCMEvent>(
+		[](Rng& rng)
+		{
+			return build(rng, { U32, U32, U32, U32 });
+		},
+		[](const NetCode::RPC::SCMEvent& c, const NetCode::RPC::SCMEvent& r)
+		{
+			return c.VehicleID == r.VehicleID && c.Arg1 == r.Arg1 && c.Arg2 == r.Arg2 && c.EventType == r.EventType;
+		},
+		[](const std::vector<uint8_t>& data, int skip)
+		{
+			// The C++ always accepts, leaving whatever it couldn't read uninitialised.
+			return bitsAfter(data, skip) < 128 ? Expect::RustRejects : Expect::Same;
+		});
+}
+
+TEST_CASE(netcode_rcon_command_matches_cpp)
+{
+	differential<NetCode::Packet::PlayerRconCommand>(
+		[](Rng& rng)
+		{
+			// Long enough to need HybridString's heap storage sometimes.
+			const int len = rng.chance(5) ? 0 : rng.range(1, 120);
+			const uint32_t prefix = rng.chance(5) ? uint32_t(rng.range(0, 1 << 30)) * 4 : uint32_t(lengthFor(rng, len, 200));
+			std::vector<uint8_t> data;
+			for (int i = 0; i < 4; ++i)
+			{
+				data.push_back(uint8_t(prefix >> (8 * i)));
+			}
+			appendText(rng, data, len);
+			return data;
+		},
+		[](const NetCode::Packet::PlayerRconCommand& c, const NetCode::Packet::PlayerRconCommand& r)
+		{
+			return sameMessage(c.cmd, r.cmd);
+		},
+		[](const std::vector<uint8_t>& data, int skip)
+		{
+			// An empty command off a byte boundary asserts in `ReadBits`.
+			bool empty = bitsAfter(data, skip) >= 32;
+			for (int i = 0; empty && i < 4; ++i)
+			{
+				empty = byteAt(data, skip + 8 * i) == 0;
+			}
+			return empty && skip % 8 != 0 ? Expect::RustRejects : Expect::Same;
 		});
 }

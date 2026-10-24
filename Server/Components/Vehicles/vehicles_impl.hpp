@@ -13,6 +13,7 @@
 #include <Server/Components/Vehicles/vehicle_models.hpp>
 #include <Server/Components/Vehicles/vehicles.hpp>
 #include <netcode.hpp>
+#include <netcode_rs.hpp>
 
 using namespace Impl;
 
@@ -37,7 +38,7 @@ private:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::OnPlayerEnterVehicle onPlayerEnterVehicleRPC;
-			if (!onPlayerEnterVehicleRPC.read(bs))
+			if (!NetCode::Rust::read(bs, onPlayerEnterVehicleRPC))
 			{
 				return false;
 			}
@@ -80,7 +81,7 @@ private:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::OnPlayerExitVehicle onPlayerExitVehicleRPC;
-			if (!onPlayerExitVehicleRPC.read(bs))
+			if (!NetCode::Rust::read(bs, onPlayerExitVehicleRPC))
 			{
 				return false;
 			}
@@ -122,7 +123,7 @@ private:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::SetVehicleDamageStatus onDamageStatus;
-			if (!onDamageStatus.read(bs) || !self.get(onDamageStatus.VehicleID))
+			if (!NetCode::Rust::read(bs, onDamageStatus) || !self.get(onDamageStatus.VehicleID))
 			{
 				return false;
 			}
@@ -153,7 +154,7 @@ private:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::SCMEvent scmEvent;
-			if (!scmEvent.read(bs))
+			if (!NetCode::Rust::read(bs, scmEvent))
 			{
 				return false;
 			}
@@ -267,7 +268,7 @@ private:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::VehicleDeath vehicleDeath;
-			if (!vehicleDeath.read(bs))
+			if (!NetCode::Rust::read(bs, vehicleDeath))
 			{
 				return false;
 			}

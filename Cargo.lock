@@ -29,6 +29,7 @@ name = "omp-pickups"
 version = "1.6.7"
 dependencies = [
  "omp-common",
+ "omp-netcode",
 ]
 
 [[package]]

@@ -10,6 +10,7 @@
 
 pub mod bitstream;
 pub mod checks;
+pub mod component_rpcs;
 mod ffi;
 pub mod packets;
 pub mod rpcs;

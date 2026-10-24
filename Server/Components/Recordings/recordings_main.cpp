@@ -9,6 +9,7 @@
 #include <Server/Components/Recordings/recordings.hpp>
 #include <sdk.hpp>
 #include <netcode.hpp>
+#include <netcode_rs.hpp>
 #include <ghc/filesystem.hpp>
 
 class PlayerRecordingData final : public IPlayerRecordingData
@@ -96,7 +97,7 @@ private:
 			{
 
 				NetCode::Packet::PlayerFootSync footSync;
-				if (!footSync.read(bs))
+				if (!NetCode::Rust::read(bs, footSync))
 				{
 					return true;
 				}
@@ -147,7 +148,7 @@ private:
 			{
 
 				NetCode::Packet::PlayerVehicleSync vehicleSync;
-				if (!vehicleSync.read(bs))
+				if (!NetCode::Rust::read(bs, vehicleSync))
 				{
 					return true;
 				}

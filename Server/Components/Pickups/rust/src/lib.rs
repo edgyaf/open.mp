@@ -14,6 +14,10 @@
 
 mod ffi;
 
+// Its decoders (`omp_netcode_*`), which the shim also uses, come with this library: linking
+// omp-netcode's own static library as well would duplicate the Rust standard library.
+use omp_netcode as _;
+
 use omp_common::values::PICKUP_POOL_SIZE;
 use omp_common::{LegacyIdMapper, PlayerBitset, Vec3};
 

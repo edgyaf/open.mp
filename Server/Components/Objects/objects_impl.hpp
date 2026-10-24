@@ -12,6 +12,7 @@
 #include <Server/Components/Vehicles/vehicles.hpp>
 #include <Server/Components/CustomModels/custommodels.hpp>
 #include <netcode.hpp>
+#include <netcode_rs.hpp>
 
 class ObjectComponent final : public IObjectsComponent, public CoreEventHandler, public PlayerConnectEventHandler, public PlayerStreamEventHandler, public PlayerSpawnEventHandler, public PoolEventHandler<IPlayer>, public PlayerModelsEventHandler
 {
@@ -42,7 +43,7 @@ private:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::OnPlayerSelectObject onPlayerSelectObjectRPC;
-			if (!onPlayerSelectObjectRPC.read(bs))
+			if (!NetCode::Rust::read(bs, onPlayerSelectObjectRPC))
 			{
 				return false;
 			}
@@ -92,7 +93,7 @@ private:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::OnPlayerEditObject onPlayerEditObjectRPC;
-			if (!onPlayerEditObjectRPC.read(bs))
+			if (!NetCode::Rust::read(bs, onPlayerEditObjectRPC))
 			{
 				return false;
 			}
@@ -158,7 +159,7 @@ private:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::OnPlayerEditAttachedObject onPlayerEditAttachedObjectRPC;
-			if (!onPlayerEditAttachedObjectRPC.read(bs))
+			if (!NetCode::Rust::read(bs, onPlayerEditAttachedObjectRPC))
 			{
 				return false;
 			}

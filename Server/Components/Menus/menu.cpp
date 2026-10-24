@@ -7,6 +7,7 @@
  */
 
 #include "menu.hpp"
+#include <netcode_rs.hpp>
 
 using namespace Impl;
 
@@ -34,7 +35,7 @@ private:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::OnPlayerSelectedMenuRow onPlayerSelectedMenuRow;
-			if (!onPlayerSelectedMenuRow.read(bs))
+			if (!NetCode::Rust::read(bs, onPlayerSelectedMenuRow))
 			{
 				return false;
 			}

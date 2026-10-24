@@ -17,6 +17,7 @@
 #include <locale>
 #include <mutex>
 #include <netcode.hpp>
+#include <netcode_rs.hpp>
 #include <network.hpp>
 #include <sdk.hpp>
 #include <thread>
@@ -79,7 +80,7 @@ private:
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::Packet::PlayerRconCommand packet;
-			if (!packet.read(bs))
+			if (!NetCode::Rust::read(bs, packet))
 			{
 				return false;
 			}

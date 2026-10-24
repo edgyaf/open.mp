@@ -92,6 +92,54 @@ decoders! {
 	omp_netcode_read_client_check_response => crate::rpcs::ClientCheckResponse;
 	omp_netcode_read_chat_message => crate::rpcs::ChatMessage;
 	omp_netcode_read_command_message => crate::rpcs::CommandMessage;
+
+	omp_netcode_read_damage_actor => crate::component_rpcs::DamageActor;
+	omp_netcode_read_request_class => crate::component_rpcs::RequestClass;
+	omp_netcode_read_dialog_response => crate::component_rpcs::DialogResponse;
+	omp_netcode_read_selected_menu_row => crate::component_rpcs::SelectedMenuRow;
+	omp_netcode_read_select_object => crate::component_rpcs::SelectObject;
+	omp_netcode_read_edit_object => crate::component_rpcs::EditObject;
+	omp_netcode_read_edit_attached_object => crate::component_rpcs::EditAttachedObject;
+	omp_netcode_read_pick_up_pickup => crate::component_rpcs::PickUpPickup;
+	omp_netcode_read_select_textdraw => crate::component_rpcs::SelectTextDraw;
+	omp_netcode_read_enter_vehicle => crate::component_rpcs::EnterVehicle;
+	omp_netcode_read_vehicle_id => crate::component_rpcs::VehicleId;
+	omp_netcode_read_vehicle_damage_status => crate::component_rpcs::VehicleDamageStatus;
+	omp_netcode_read_scm_event => crate::component_rpcs::ScmEvent;
+}
+
+/// Gives a decoder somewhere to put a string of `len` bytes: returns a buffer of at least that
+/// many, or null to fail the decode.
+pub type ReserveString = unsafe extern "C" fn(context: *mut std::ffi::c_void, len: usize) -> *mut u8;
+
+/// `PlayerRconCommand`. On success the command has been written to the buffer `reserve` returned.
+///
+/// # Safety
+/// As for the other decoders; `reserve` must return null or a buffer of at least `len` writable
+/// bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn omp_netcode_read_rcon_command(
+	data: *const u8,
+	bits: usize,
+	offset: *mut usize,
+	context: *mut std::ffi::c_void,
+	reserve: ReserveString,
+) -> bool {
+	let Some(mut reader) = (unsafe { reader(data, bits, *offset) }) else {
+		return false;
+	};
+	let Some(command) = crate::component_rpcs::RconCommand::read(&mut reader) else {
+		return false;
+	};
+	let buffer = unsafe { reserve(context, command.command.len()) };
+	if buffer.is_null() {
+		return false;
+	}
+	unsafe {
+		std::ptr::copy_nonoverlapping(command.command.as_ptr(), buffer, command.command.len());
+		*offset = bits - reader.unread_bits();
+	}
+	true
 }
 
 // Checks on decoded sync data; see `checks.rs`.
