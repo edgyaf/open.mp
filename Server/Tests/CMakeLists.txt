@@ -5,6 +5,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(tested_components
 	Checkpoints
 	GangZones
+	Pickups
 	Timers
 	Variables
 )
@@ -29,6 +30,7 @@ add_executable(component-tests
 	main.cpp
 	checkpoints.cpp
 	gangzones.cpp
+	pickups.cpp
 	timers.cpp
 	variables.cpp
 	harness.hpp

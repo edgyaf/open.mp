@@ -17,11 +17,12 @@ TARGETS = [
 	("SDK/include/network.hpp", "INetwork"),
 	("SDK/include/core.hpp", "ILogger"),
 	("SDK/include/core.hpp", "ICore"),
+	("SDK/include/core.hpp", "IConfig"),
 ]
 
 SKIP = {
-	"IEntity": {"getPosition", "setPosition"},
-	"IPlayer": {"getNetworkData", "getName"},
+	"IEntity": {"getPosition", "setPosition", "getVirtualWorld", "setVirtualWorld"},
+	"IPlayer": {"getNetworkData", "getName", "getState"},
 	"IPlayerPool": {
 		"entries",
 		"players",
@@ -38,9 +39,16 @@ SKIP = {
 		"getPlayerUpdateDispatcher",
 		"getPoolEventDispatcher",
 	},
-	"INetwork": {"sendRPC", "sendPacket", "getNetworkType"},
+	"INetwork": {
+		"sendRPC",
+		"sendPacket",
+		"getNetworkType",
+		"getPerRPCInEventDispatcher",
+		"getPerPacketInEventDispatcher",
+	},
 	"ILogger": {"printLn", "vprintLn", "logLn", "vlogLn", "printLnU8", "vprintLnU8"},
-	"ICore": {"getPlayers", "getEventDispatcher"},
+	"ICore": {"getPlayers", "getEventDispatcher", "getNetworks", "getConfig"},
+	"IConfig": {"getInt", "getFloat"},
 }
 
 DECL = re.compile(

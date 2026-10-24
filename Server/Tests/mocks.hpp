@@ -48,10 +48,35 @@ struct MockNetwork final : public INetwork
 {
 	/// IDs of the RPCs sent, in order.
 	std::vector<int> sent;
+	// Packet and RPC IDs are bytes.
+	DefaultIndexedEventDispatcher<SingleNetworkInEventHandler> rpcInDispatcher { 256 };
+	DefaultIndexedEventDispatcher<SingleNetworkInEventHandler> packetInDispatcher { 256 };
+
+	/// Deliver an RPC from a client to the handlers components registered for it. Returns whether
+	/// all handlers accepted it.
+	template <class RPC>
+	bool receive(IPlayer& from, NetworkBitStream& bs)
+	{
+		return rpcInDispatcher.stopAtFalse(RPC::PacketID, [&](SingleNetworkInEventHandler* handler)
+			{
+				bs.resetReadPointer();
+				return handler->onReceive(from, bs);
+			});
+	}
 
 	ENetworkType getNetworkType() const override
 	{
 		return ENetworkType(0);
+	}
+
+	IIndexedEventDispatcher<SingleNetworkInEventHandler>& getPerRPCInEventDispatcher() override
+	{
+		return rpcInDispatcher;
+	}
+
+	IIndexedEventDispatcher<SingleNetworkInEventHandler>& getPerPacketInEventDispatcher() override
+	{
+		return packetInDispatcher;
 	}
 
 	bool sendPacket(IPlayer& peer, Span<uint8_t> data, int channel, bool dispatchEvents) override
@@ -80,6 +105,8 @@ struct MockPlayer final : public IPlayer
 {
 	int id;
 	Vector3 pos = Vector3(0.0f);
+	int virtualWorld = 0;
+	PlayerState state = PlayerState_OnFoot;
 	PeerNetworkData netData {};
 
 	MockPlayer(int id, MockNetwork& network)
@@ -111,6 +138,21 @@ struct MockPlayer final : public IPlayer
 	StringView getName() const override
 	{
 		return "MockPlayer";
+	}
+
+	int getVirtualWorld() const override
+	{
+		return virtualWorld;
+	}
+
+	void setVirtualWorld(int vw) override
+	{
+		virtualWorld = vw;
+	}
+
+	PlayerState getState() const override
+	{
+		return state;
 	}
 
 	MOCK_STUBS_IEntity
@@ -147,11 +189,16 @@ struct MockPlayerPool final : public IPlayerPool
 		entries_.erase(&player);
 	}
 
+	/// Fake clock for player updates. Each update is a minute after the previous one, so rate-limited
+	/// work like streaming runs every time.
+	TimePoint now = TimePoint() + std::chrono::hours(1);
+
 	void update(IPlayer& player)
 	{
-		updateDispatcher.stopAtFalse([&player](PlayerUpdateEventHandler* handler)
+		now += std::chrono::minutes(1);
+		updateDispatcher.stopAtFalse([&player, this](PlayerUpdateEventHandler* handler)
 			{
-				return handler->onPlayerUpdate(player, TimePoint());
+				return handler->onPlayerUpdate(player, now);
 			});
 	}
 
@@ -245,9 +292,29 @@ struct MockPlayerPool final : public IPlayerPool
 	MOCK_STUBS_IPlayerPool
 };
 
+struct MockConfig final : public IConfig
+{
+	float streamRadius = 200.0f;
+	int streamRate = 1000;
+
+	int* getInt(StringView key) override
+	{
+		return key == "network.stream_rate" ? &streamRate : nullptr;
+	}
+
+	float* getFloat(StringView key) override
+	{
+		return key == "network.stream_radius" ? &streamRadius : nullptr;
+	}
+
+	MOCK_STUBS_IConfig
+};
+
 struct MockCore final : public ICore
 {
 	MockPlayerPool players;
+	MockConfig config;
+	FlatPtrHashSet<INetwork> networks;
 	DefaultEventDispatcher<CoreEventHandler> coreDispatcher;
 	/// Messages logged at warning level or above.
 	std::vector<std::string> warnings;
@@ -265,6 +332,16 @@ struct MockCore final : public ICore
 	IEventDispatcher<CoreEventHandler>& getEventDispatcher() override
 	{
 		return coreDispatcher;
+	}
+
+	IConfig& getConfig() override
+	{
+		return config;
+	}
+
+	const FlatPtrHashSet<INetwork>& getNetworks() override
+	{
+		return networks;
 	}
 
 	void printLn(const char* fmt, ...) override { }
@@ -317,6 +394,7 @@ struct ComponentFixture
 		: component(harness::loadComponent(name))
 		, api(static_cast<ComponentT*>(component))
 	{
+		core.networks.insert(&network);
 		component->onLoad(&core);
 		component->onInit(&components);
 		component->onReady();
