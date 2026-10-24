@@ -81,22 +81,26 @@ function(link_rust_library target package)
 		set(byproducts BYPRODUCTS "${lib_path}")
 	endif()
 
-	add_custom_target(${target}-rust
-		COMMAND "${CARGO_EXECUTABLE}" build
-			--package ${package}
-			--lib
-			--locked
-			--target ${rust_target}
-			--target-dir "${cargo_target_dir}"
-			${release_flag}
-		WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-		${byproducts}
-		USES_TERMINAL
-		COMMENT "Building Rust package ${package} for ${rust_target}"
-		VERBATIM
-	)
-	set_property(TARGET ${target}-rust PROPERTY FOLDER "Server/Components")
-	add_dependencies(${target} ${target}-rust)
+	# One build target per package, shared by everything that links it: two rules producing the
+	# same library would race, and Ninja warns that such builds are incorrect.
+	if(NOT TARGET rust-${package})
+		add_custom_target(rust-${package}
+			COMMAND "${CARGO_EXECUTABLE}" build
+				--package ${package}
+				--lib
+				--locked
+				--target ${rust_target}
+				--target-dir "${cargo_target_dir}"
+				${release_flag}
+			WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+			${byproducts}
+			USES_TERMINAL
+			COMMENT "Building Rust package ${package} for ${rust_target}"
+			VERBATIM
+		)
+		set_property(TARGET rust-${package} PROPERTY FOLDER "Rust")
+	endif()
+	add_dependencies(${target} rust-${package})
 
 	target_link_libraries(${target} PRIVATE "${lib_path}")
 
