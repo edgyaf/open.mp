@@ -15,8 +15,11 @@ cmake .. \
     -DSTATIC_STDCXX=true \
     -DBUILD_SERVER=$build_server \
     -DBUILD_ABI_CHECK_TOOL=$build_tools \
+    -DBUILD_COMPONENT_TESTS=$build_server \
 &&
 cmake \
     --build . \
     --config $config \
-    --parallel $(nproc)
+    --parallel $(nproc) \
+&&
+ctest -C $config --output-on-failure

@@ -121,7 +121,7 @@ jobs:
           $env:OMP_BUILD_COMMIT=$(git rev-parse HEAD)
           mkdir build
           cd build
-          cmake -G "Visual Studio 17 2022" -DCMAKE_BUILD_TYPE=${{ steps.vars.outputs.build_config }} .. -A ${{ matrix.arch }} -T "ClangCL"
+          cmake -G "Visual Studio 17 2022" -DCMAKE_BUILD_TYPE=${{ steps.vars.outputs.build_config }} .. -A ${{ matrix.arch }} -T "ClangCL" -DBUILD_COMPONENT_TESTS=ON
 
       - name: Try to save conan cache
         if: steps.conan-cache-restore.outputs.cache-hit != 'true'
@@ -136,6 +136,11 @@ jobs:
         run: |
           cd build
           cmake --build . --config ${{ steps.vars.outputs.build_config }}
+
+      - name: Run component tests
+        run: |
+          cd build
+          ctest -C ${{ steps.vars.outputs.build_config }} --output-on-failure
 
       - name: Create a build archive
         id: build
@@ -324,8 +329,9 @@ jobs:
             mkdir -p docker/conan2/p
             mkdir -p ~/.conan2
             mv docker/conan2/p ~/.conan2
-            cmake -S . -B build -G Ninja -DTARGET_BUILD_ARCH=${{ matrix.arch == 'arm32' && 'armv7' || 'armv8' }} -DCMAKE_BUILD_TYPE=${{ steps.vars.outputs.build_config }} -DSHARED_OPENSSL=${{ matrix.ssl == 'dynamic' }} -DSTATIC_STDCXX=true -DBUILD_SERVER=1 -DBUILD_ABI_CHECK_TOOL=0
+            cmake -S . -B build -G Ninja -DTARGET_BUILD_ARCH=${{ matrix.arch == 'arm32' && 'armv7' || 'armv8' }} -DCMAKE_BUILD_TYPE=${{ steps.vars.outputs.build_config }} -DSHARED_OPENSSL=${{ matrix.ssl == 'dynamic' }} -DSTATIC_STDCXX=true -DBUILD_SERVER=1 -DBUILD_ABI_CHECK_TOOL=0 -DBUILD_COMPONENT_TESTS=ON
             cmake --build build --config ${{ steps.vars.outputs.build_config }} --parallel $(nproc)
+            (cd build && ctest -C ${{ steps.vars.outputs.build_config }} --output-on-failure)
             mv ~/.conan2/p docker/conan2
 
       - name: Upload build artifacts
@@ -423,6 +429,7 @@ jobs:
             -DSHARED_OPENSSL=${{ steps.vars.outputs.build_shared }} \
             -DSTATIC_STDCXX=false \
             -DBUILD_SERVER=${{ steps.vars.outputs.build_server }} \
+            -DBUILD_COMPONENT_TESTS=ON \
             -DBUILD_ABI_CHECK_TOOL=${{ steps.vars.outputs.build_tools }}
 
       - name: Build
@@ -431,6 +438,12 @@ jobs:
           cmake --build build \
             --config ${{ steps.vars.outputs.build_config }} \
             --parallel "$(sysctl -n hw.logicalcpu)"
+
+      - name: Run component tests
+        shell: bash
+        run: |
+          cd build
+          ctest -C ${{ steps.vars.outputs.build_config }} --output-on-failure
 
       - name: Save Conan cache
         if: steps.conan-cache-restore.outputs.cache-hit != 'true'

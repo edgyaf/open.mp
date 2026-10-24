@@ -46,3 +46,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/Rust.cmake)
 
 add_subdirectory(Source)
 add_subdirectory(Components)
+
+if(BUILD_COMPONENT_TESTS)
+	add_subdirectory(Tests)
+endif()
