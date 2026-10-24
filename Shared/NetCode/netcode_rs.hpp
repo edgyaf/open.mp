@@ -8,8 +8,8 @@
 
 #pragma once
 
-// Rust decoders for packets sent by clients (`Shared/rust/netcode`), and `NetCode::Rust::read`
-// overloads that use them in place of the packets' own `read` methods.
+// Rust decoders for packets and RPCs sent by clients (`Shared/rust/netcode`), and
+// `NetCode::Rust::read` overloads that use them in place of their own `read` methods.
 //
 // The C ABI below mirrors `Shared/rust/netcode/src/ffi.rs`; keep the two in sync. Decoders take a
 // `NetworkBitStream`'s buffer, its size in bits and the current read offset in bits. On success
@@ -19,6 +19,7 @@
 #include "netcode.hpp"
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 extern "C"
 {
@@ -165,6 +166,69 @@ extern "C"
 		OmpNetcodeVec3 turnVelocity;
 	};
 
+	struct OmpNetcodeClickMap
+	{
+		OmpNetcodeVec3 pos;
+	};
+
+	struct OmpNetcodeClickPlayer
+	{
+		int32_t playerID;
+		uint8_t source;
+	};
+
+	struct OmpNetcodeGiveTakeDamage
+	{
+		bool taking;
+		int32_t playerID;
+		float damage;
+		uint32_t weaponID;
+		uint32_t bodypart;
+	};
+
+	struct OmpNetcodeInteriorChange
+	{
+		uint32_t interior;
+	};
+
+	struct OmpNetcodeDeath
+	{
+		uint8_t reason;
+		uint16_t killerID;
+	};
+
+	struct OmpNetcodeCameraTarget
+	{
+		int32_t objectID;
+		int32_t vehicleID;
+		int32_t playerID;
+		int32_t actorID;
+	};
+
+	struct OmpNetcodeClientCheckResponse
+	{
+		int32_t type;
+		int32_t address;
+		int32_t results;
+	};
+
+	/// Raw bytes, which may include NULs.
+	struct OmpNetcodeMessage
+	{
+		uint32_t len;
+		uint8_t data[256];
+	};
+
+	struct OmpNetcodeChatMessage
+	{
+		OmpNetcodeMessage message;
+	};
+
+	struct OmpNetcodeCommandMessage
+	{
+		OmpNetcodeMessage message;
+	};
+
 	bool omp_netcode_read_foot_sync(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeFootSync* out);
 	bool omp_netcode_read_aim_sync(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeAimSync* out);
 	bool omp_netcode_read_bullet_sync(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeBulletSync* out);
@@ -175,6 +239,16 @@ extern "C"
 	bool omp_netcode_read_passenger_sync(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodePassengerSync* out);
 	bool omp_netcode_read_unoccupied_sync(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeUnoccupiedSync* out);
 	bool omp_netcode_read_trailer_sync(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeTrailerSync* out);
+
+	bool omp_netcode_read_click_map(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeClickMap* out);
+	bool omp_netcode_read_click_player(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeClickPlayer* out);
+	bool omp_netcode_read_give_take_damage(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeGiveTakeDamage* out);
+	bool omp_netcode_read_interior_change(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeInteriorChange* out);
+	bool omp_netcode_read_death(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeDeath* out);
+	bool omp_netcode_read_camera_target(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeCameraTarget* out);
+	bool omp_netcode_read_client_check_response(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeClientCheckResponse* out);
+	bool omp_netcode_read_chat_message(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeChatMessage* out);
+	bool omp_netcode_read_command_message(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeCommandMessage* out);
 }
 
 // Must match the Rust definitions, which assert the same sizes.
@@ -188,6 +262,15 @@ static_assert(sizeof(OmpNetcodeVehicleSync) == 72, "OmpNetcodeVehicleSync layout
 static_assert(sizeof(OmpNetcodePassengerSync) == 32, "OmpNetcodePassengerSync layout differs from Rust");
 static_assert(sizeof(OmpNetcodeUnoccupiedSync) == 72, "OmpNetcodeUnoccupiedSync layout differs from Rust");
 static_assert(sizeof(OmpNetcodeTrailerSync) == 56, "OmpNetcodeTrailerSync layout differs from Rust");
+static_assert(sizeof(OmpNetcodeClickMap) == 12, "OmpNetcodeClickMap layout differs from Rust");
+static_assert(sizeof(OmpNetcodeClickPlayer) == 8, "OmpNetcodeClickPlayer layout differs from Rust");
+static_assert(sizeof(OmpNetcodeGiveTakeDamage) == 20, "OmpNetcodeGiveTakeDamage layout differs from Rust");
+static_assert(sizeof(OmpNetcodeInteriorChange) == 4, "OmpNetcodeInteriorChange layout differs from Rust");
+static_assert(sizeof(OmpNetcodeDeath) == 4, "OmpNetcodeDeath layout differs from Rust");
+static_assert(sizeof(OmpNetcodeCameraTarget) == 16, "OmpNetcodeCameraTarget layout differs from Rust");
+static_assert(sizeof(OmpNetcodeClientCheckResponse) == 12, "OmpNetcodeClientCheckResponse layout differs from Rust");
+static_assert(sizeof(OmpNetcodeChatMessage) == 260, "OmpNetcodeChatMessage layout differs from Rust");
+static_assert(sizeof(OmpNetcodeCommandMessage) == 260, "OmpNetcodeCommandMessage layout differs from Rust");
 
 namespace NetCode
 {
@@ -213,6 +296,13 @@ namespace Rust
 		inline GTAQuat toCpp(const OmpNetcodeQuat& q)
 		{
 			return GTAQuat(q.w, q.x, q.y, q.z);
+		}
+
+		template <size_t Size>
+		inline void toCpp(const OmpNetcodeMessage& message, HybridString<Size>& out)
+		{
+			out.reserve(message.len);
+			memcpy(out.data(), message.data, message.len);
 		}
 
 		/// Decode from `bs`'s read offset with a Rust decoder, filling `out` with `fill` and
@@ -378,6 +468,92 @@ namespace Rust
 				out.Quat = detail::toCpp(r.quat);
 				out.Velocity = detail::toCpp(r.velocity);
 				out.TurnVelocity = detail::toCpp(r.turnVelocity);
+			});
+	}
+
+	/// RPCs. Unlike the packets' own `read`, these reject a truncated `OnPlayerClickPlayer` or
+	/// `ClientCheck` instead of leaving fields uninitialised.
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerClickMap& out)
+	{
+		return detail::decode(bs, omp_netcode_read_click_map, [&out](const OmpNetcodeClickMap& r)
+			{
+				out.Pos = detail::toCpp(r.pos);
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerClickPlayer& out)
+	{
+		return detail::decode(bs, omp_netcode_read_click_player, [&out](const OmpNetcodeClickPlayer& r)
+			{
+				out.PlayerID = r.playerID;
+				out.Source = r.source;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerGiveTakeDamage& out)
+	{
+		return detail::decode(bs, omp_netcode_read_give_take_damage, [&out](const OmpNetcodeGiveTakeDamage& r)
+			{
+				out.Taking = r.taking;
+				out.PlayerID = r.playerID;
+				out.Damage = r.damage;
+				out.WeaponID = r.weaponID;
+				out.Bodypart = r.bodypart;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerInteriorChange& out)
+	{
+		return detail::decode(bs, omp_netcode_read_interior_change, [&out](const OmpNetcodeInteriorChange& r)
+			{
+				out.Interior = r.interior;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerDeath& out)
+	{
+		return detail::decode(bs, omp_netcode_read_death, [&out](const OmpNetcodeDeath& r)
+			{
+				out.Reason = r.reason;
+				out.KillerID = r.killerID;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::OnPlayerCameraTarget& out)
+	{
+		return detail::decode(bs, omp_netcode_read_camera_target, [&out](const OmpNetcodeCameraTarget& r)
+			{
+				out.TargetObjectID = r.objectID;
+				out.TargetVehicleID = r.vehicleID;
+				out.TargetPlayerID = r.playerID;
+				out.TargetActorID = r.actorID;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::ClientCheck& out)
+	{
+		return detail::decode(bs, omp_netcode_read_client_check_response, [&out](const OmpNetcodeClientCheckResponse& r)
+			{
+				out.Type = r.type;
+				out.Address = r.address;
+				out.Results = r.results;
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::PlayerRequestChatMessage& out)
+	{
+		return detail::decode(bs, omp_netcode_read_chat_message, [&out](const OmpNetcodeChatMessage& r)
+			{
+				detail::toCpp(r.message, out.message);
+			});
+	}
+
+	inline bool read(NetworkBitStream& bs, RPC::PlayerRequestCommandMessage& out)
+	{
+		return detail::decode(bs, omp_netcode_read_command_message, [&out](const OmpNetcodeCommandMessage& r)
+			{
+				detail::toCpp(r.message, out.message);
 			});
 	}
 }

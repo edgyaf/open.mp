@@ -7,10 +7,12 @@
  */
 
 // Differential tests: `NetCode::Rust::read` (the Rust decoders, as the server uses them) must
-// accept exactly the inputs the packets' own `read` methods accept, decode them to the same values
-// and consume the same number of bits.
+// accept exactly the inputs the packets' and RPCs' own `read` methods accept, decode them to the
+// same values and consume the same number of bits. The exception is inputs the C++ accepts with
+// fields it never read, which the Rust rejects on purpose.
 
 #include "harness.hpp"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -180,13 +182,36 @@ bool same(const GTAQuat& a, const GTAQuat& b)
 	return sameBits(a.q.w, b.q.w) && sameBits(a.q.x, b.q.x) && sameBits(a.q.y, b.q.y) && sameBits(a.q.z, b.q.z);
 }
 
+/// Bits a stream over `data` has left to read from `skip`.
+int bitsAfter(const std::vector<uint8_t>& data, int skip)
+{
+	return int(data.size()) * 8 - skip;
+}
+
+/// The byte starting at bit `bit` of `data`, which must have 8 bits there.
+uint8_t byteAt(const std::vector<uint8_t>& data, int bit)
+{
+	const int shift = bit & 7;
+	const size_t i = size_t(bit >> 3);
+	return uint8_t(data[i] << shift | (shift ? data[i + 1] >> (8 - shift) : 0));
+}
+
+/// Whether the Rust decoder must reject an input the C++ accepts.
+enum class Expect
+{
+	Same,
+	RustRejects,
+};
+
 /// Decode random and plausible-but-mutated inputs with the packet's own `read` and with
-/// `NetCode::Rust::read`, which the server uses, and compare.
-template <class Packet, class Generate, class Compare>
-void differential(Generate generate, Compare compare)
+/// `NetCode::Rust::read`, which the server uses, and compare. `expect(data, skip)` picks out
+/// inputs where the C++ reads fields that aren't there; for those the C++ isn't run (it would
+/// read uninitialised memory or assert) and the Rust must reject.
+template <class Packet, class Generate, class Compare, class Expectation>
+void differential(Generate generate, Compare compare, Expectation expect)
 {
 	Rng rng;
-	int accepted = 0, rejected = 0, mismatches = 0;
+	int accepted = 0, rejected = 0, mismatches = 0, portedMismatches = 0;
 
 	for (int i = 0; i < 100000; ++i)
 	{
@@ -206,6 +231,22 @@ void differential(Generate generate, Compare compare)
 		}
 		const int skip = rng.range(0, 15);
 		std::vector<uint8_t> data = withPrefix(rng, payload, skip);
+
+		if (expect(data, skip) == Expect::RustRejects)
+		{
+			NetworkBitStream rustStream(data.data(), unsigned(data.size()), false);
+			rustStream.SetReadOffset(skip);
+			Packet rust;
+			if (NetCode::Rust::read(rustStream, rust) || rustStream.GetReadOffset() != skip)
+			{
+				++portedMismatches;
+			}
+			else
+			{
+				++rejected;
+			}
+			continue;
+		}
 
 		NetworkBitStream cppStream(data.data(), unsigned(data.size()), false);
 		cppStream.SetReadOffset(skip);
@@ -241,9 +282,38 @@ void differential(Generate generate, Compare compare)
 	}
 
 	CHECK(mismatches == 0);
+	CHECK_PORTED(portedMismatches == 0);
 	// Make sure both paths were actually exercised.
 	CHECK(accepted > 5000);
-	CHECK(rejected > 5000);
+	CHECK(rejected > 2000);
+}
+
+template <class Packet, class Generate, class Compare>
+void differential(Generate generate, Compare compare)
+{
+	differential<Packet>(generate, compare, [](const std::vector<uint8_t>&, int)
+		{
+			return Expect::Same;
+		});
+}
+
+/// Mostly printable bytes for a message, `len` long.
+void appendText(Rng& rng, std::vector<uint8_t>& data, int len)
+{
+	for (int i = 0; i < len; ++i)
+	{
+		data.push_back(uint8_t(rng.chance(95) ? rng.range(0x20, 0x7E) : rng.byte()));
+	}
+}
+
+/// A length prefix that's mostly right, sometimes a little off and sometimes anything.
+int lengthFor(Rng& rng, int len, int max)
+{
+	if (rng.chance(80))
+	{
+		return len;
+	}
+	return rng.chance(50) ? std::max(0, len + rng.range(-2, 2)) : rng.range(0, max);
 }
 
 }
@@ -415,5 +485,167 @@ TEST_CASE(netcode_trailer_sync_matches_cpp)
 		[](const NetCode::Packet::PlayerTrailerSync& c, const NetCode::Packet::PlayerTrailerSync& r)
 		{
 			return c.VehicleID == r.VehicleID && same(c.Position, r.Position) && same(c.Quat, r.Quat) && same(c.Velocity, r.Velocity) && same(c.TurnVelocity, r.TurnVelocity);
+		});
+}
+
+TEST_CASE(netcode_click_map_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerClickMap>(
+		[](Rng& rng)
+		{
+			return build(rng, { floats(3, 25000.0f) });
+		},
+		[](const NetCode::RPC::OnPlayerClickMap& c, const NetCode::RPC::OnPlayerClickMap& r)
+		{
+			return same(c.Pos, r.Pos);
+		});
+}
+
+TEST_CASE(netcode_click_player_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerClickPlayer>(
+		[](Rng& rng)
+		{
+			return build(rng, { U16, U8 });
+		},
+		[](const NetCode::RPC::OnPlayerClickPlayer& c, const NetCode::RPC::OnPlayerClickPlayer& r)
+		{
+			return c.PlayerID == r.PlayerID && c.Source == r.Source;
+		},
+		[](const std::vector<uint8_t>& data, int skip)
+		{
+			// The C++ accepts these with an unread player ID.
+			const int bits = bitsAfter(data, skip);
+			return bits >= 8 && bits < 24 ? Expect::RustRejects : Expect::Same;
+		});
+}
+
+TEST_CASE(netcode_give_take_damage_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerGiveTakeDamage>(
+		[](Rng& rng)
+		{
+			NetworkBitStream bs;
+			bs.writeBIT(rng.chance(50));
+			bs.writeUINT16(rng.range(0, 1100));
+			bs.writeFLOAT(rng.edgyFloat(200.0f));
+			bs.writeUINT32(rng.chance(80) ? rng.range(0, 60) : rng.range(0, 1 << 30));
+			bs.writeUINT32(rng.chance(80) ? rng.range(0, 10) : rng.range(0, 1 << 30));
+			return std::vector<uint8_t>(bs.GetData(), bs.GetData() + bitsToBytes(bs.GetNumberOfBitsUsed()));
+		},
+		[](const NetCode::RPC::OnPlayerGiveTakeDamage& c, const NetCode::RPC::OnPlayerGiveTakeDamage& r)
+		{
+			return c.Taking == r.Taking && c.PlayerID == r.PlayerID && sameBits(c.Damage, r.Damage) && c.WeaponID == r.WeaponID && c.Bodypart == r.Bodypart;
+		});
+}
+
+TEST_CASE(netcode_interior_change_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerInteriorChange>(
+		[](Rng& rng)
+		{
+			return build(rng, { U8 });
+		},
+		[](const NetCode::RPC::OnPlayerInteriorChange& c, const NetCode::RPC::OnPlayerInteriorChange& r)
+		{
+			return c.Interior == r.Interior;
+		});
+}
+
+TEST_CASE(netcode_death_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerDeath>(
+		[](Rng& rng)
+		{
+			return build(rng, { U8, U16 });
+		},
+		[](const NetCode::RPC::OnPlayerDeath& c, const NetCode::RPC::OnPlayerDeath& r)
+		{
+			return c.Reason == r.Reason && c.KillerID == r.KillerID;
+		});
+}
+
+TEST_CASE(netcode_camera_target_matches_cpp)
+{
+	differential<NetCode::RPC::OnPlayerCameraTarget>(
+		[](Rng& rng)
+		{
+			return build(rng, { U16, U16, U16, U16 });
+		},
+		[](const NetCode::RPC::OnPlayerCameraTarget& c, const NetCode::RPC::OnPlayerCameraTarget& r)
+		{
+			return c.TargetObjectID == r.TargetObjectID && c.TargetVehicleID == r.TargetVehicleID
+				&& c.TargetPlayerID == r.TargetPlayerID && c.TargetActorID == r.TargetActorID;
+		});
+}
+
+TEST_CASE(netcode_client_check_matches_cpp)
+{
+	differential<NetCode::RPC::ClientCheck>(
+		[](Rng& rng)
+		{
+			return build(rng, { U8, U32, U8 });
+		},
+		[](const NetCode::RPC::ClientCheck& c, const NetCode::RPC::ClientCheck& r)
+		{
+			return c.Type == r.Type && c.Address == r.Address && c.Results == r.Results;
+		},
+		[](const std::vector<uint8_t>& data, int skip)
+		{
+			// The C++ always accepts, leaving whatever it couldn't read uninitialised.
+			return bitsAfter(data, skip) < 48 ? Expect::RustRejects : Expect::Same;
+		});
+}
+
+bool sameMessage(const HybridString<128>& a, const HybridString<128>& b)
+{
+	return a.length() == b.length() && std::memcmp(a.data(), b.data(), a.length()) == 0;
+}
+
+TEST_CASE(netcode_chat_message_matches_cpp)
+{
+	differential<NetCode::RPC::PlayerRequestChatMessage>(
+		[](Rng& rng)
+		{
+			const int len = rng.chance(5) ? 0 : rng.range(1, 160);
+			std::vector<uint8_t> data { uint8_t(lengthFor(rng, len, 255)) };
+			appendText(rng, data, len);
+			return data;
+		},
+		[](const NetCode::RPC::PlayerRequestChatMessage& c, const NetCode::RPC::PlayerRequestChatMessage& r)
+		{
+			return sameMessage(c.message, r.message);
+		},
+		[](const std::vector<uint8_t>& data, int skip)
+		{
+			// An empty message off a byte boundary has the C++ call `ReadBits` for zero bits,
+			// which asserts (and, without asserts, fails).
+			const bool empty = bitsAfter(data, skip) >= 8 && byteAt(data, skip) == 0;
+			return empty && skip % 8 != 0 ? Expect::RustRejects : Expect::Same;
+		});
+}
+
+TEST_CASE(netcode_command_message_matches_cpp)
+{
+	differential<NetCode::RPC::PlayerRequestCommandMessage>(
+		[](Rng& rng)
+		{
+			const int len = rng.chance(5) ? rng.range(0, 2) : rng.range(2, 260);
+			const uint32_t prefix = rng.chance(5) ? uint32_t(rng.range(0, 1 << 30)) * 4 : uint32_t(lengthFor(rng, len, 300));
+			std::vector<uint8_t> data;
+			for (int i = 0; i < 4; ++i)
+			{
+				data.push_back(uint8_t(prefix >> (8 * i)));
+			}
+			if (len > 0)
+			{
+				data.push_back('/');
+				appendText(rng, data, len - 1);
+			}
+			return data;
+		},
+		[](const NetCode::RPC::PlayerRequestCommandMessage& c, const NetCode::RPC::PlayerRequestCommandMessage& r)
+		{
+			return sameMessage(c.message, r.message);
 		});
 }

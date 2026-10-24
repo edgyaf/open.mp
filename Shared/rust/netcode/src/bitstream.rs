@@ -40,6 +40,11 @@ impl<'a> BitReader<'a> {
 		self.len - self.offset
 	}
 
+	/// Whether the next read starts on a byte boundary of the underlying buffer.
+	pub fn is_byte_aligned(&self) -> bool {
+		self.offset.is_multiple_of(8)
+	}
+
 	/// Skip `bits` bits, e.g. the packet ID. Fails if there aren't enough.
 	pub fn skip(&mut self, bits: usize) -> Option<()> {
 		if self.unread_bits() < bits {

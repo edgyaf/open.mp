@@ -82,4 +82,14 @@ decoders! {
 	omp_netcode_read_passenger_sync => crate::packets::PassengerSync;
 	omp_netcode_read_unoccupied_sync => crate::packets::UnoccupiedSync;
 	omp_netcode_read_trailer_sync => crate::packets::TrailerSync;
+
+	omp_netcode_read_click_map => crate::rpcs::ClickMap;
+	omp_netcode_read_click_player => crate::rpcs::ClickPlayer;
+	omp_netcode_read_give_take_damage => crate::rpcs::GiveTakeDamage;
+	omp_netcode_read_interior_change => crate::rpcs::InteriorChange;
+	omp_netcode_read_death => crate::rpcs::Death;
+	omp_netcode_read_camera_target => crate::rpcs::CameraTarget;
+	omp_netcode_read_client_check_response => crate::rpcs::ClientCheckResponse;
+	omp_netcode_read_chat_message => crate::rpcs::ChatMessage;
+	omp_netcode_read_command_message => crate::rpcs::CommandMessage;
 }

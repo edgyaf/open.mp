@@ -128,7 +128,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 			static const bool* allowTeleport_ = self.core.getConfig().getBool("rcon.allow_teleport");
 
 			NetCode::RPC::OnPlayerClickMap onPlayerClickMapRPC;
-			if (!onPlayerClickMapRPC.read(bs))
+			if (!NetCode::Rust::read(bs, onPlayerClickMapRPC))
 			{
 				return false;
 			}
@@ -166,7 +166,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::OnPlayerClickPlayer onPlayerClickPlayerRPC;
-			if (!onPlayerClickPlayerRPC.read(bs))
+			if (!NetCode::Rust::read(bs, onPlayerClickPlayerRPC))
 			{
 				return false;
 			}
@@ -195,7 +195,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::OnPlayerGiveTakeDamage onPlayerGiveTakeDamageRPC;
-			if (!onPlayerGiveTakeDamageRPC.read(bs))
+			if (!NetCode::Rust::read(bs, onPlayerGiveTakeDamageRPC))
 			{
 				return false;
 			}
@@ -303,7 +303,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 			const bool* allowInteriorWeapons_ = self.core.getConfig().getBool("game.allow_interior_weapons");
 
 			NetCode::RPC::OnPlayerInteriorChange onPlayerInteriorChangeRPC;
-			if (!onPlayerInteriorChangeRPC.read(bs))
+			if (!NetCode::Rust::read(bs, onPlayerInteriorChangeRPC))
 			{
 				return false;
 			}
@@ -368,7 +368,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::OnPlayerDeath onPlayerDeathRPC;
-			if (!onPlayerDeathRPC.read(bs))
+			if (!NetCode::Rust::read(bs, onPlayerDeathRPC))
 			{
 				return false;
 			}
@@ -431,7 +431,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::OnPlayerCameraTarget onPlayerCameraTargetRPC;
-			if (!onPlayerCameraTargetRPC.read(bs))
+			if (!NetCode::Rust::read(bs, onPlayerCameraTargetRPC))
 			{
 				return false;
 			}
@@ -528,7 +528,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::PlayerRequestChatMessage playerChatMessageRequest;
-			if (!playerChatMessageRequest.read(bs))
+			if (!NetCode::Rust::read(bs, playerChatMessageRequest))
 			{
 				return false;
 			}
@@ -601,7 +601,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::PlayerRequestCommandMessage playerRequestCommandMessage;
-			if (!playerRequestCommandMessage.read(bs))
+			if (!NetCode::Rust::read(bs, playerRequestCommandMessage))
 			{
 				return false;
 			}
@@ -649,7 +649,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::RPC::ClientCheck rpc;
-			if (!rpc.read(bs))
+			if (!NetCode::Rust::read(bs, rpc))
 			{
 				return false;
 			}
