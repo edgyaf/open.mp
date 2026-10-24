@@ -9,7 +9,8 @@
 #pragma once
 
 // Rust decoders for packets and RPCs sent by clients (`Shared/rust/netcode`), and
-// `NetCode::Rust::read` overloads that use them in place of their own `read` methods.
+// `NetCode::Rust::read` overloads that use them in place of their own `read` methods. Also the
+// checks PlayerPool applies to decoded sync data that don't depend on server state.
 //
 // The C ABI below mirrors `Shared/rust/netcode/src/ffi.rs`; keep the two in sync. Decoders take a
 // `NetworkBitStream`'s buffer, its size in bits and the current read offset in bits. On success
@@ -249,6 +250,20 @@ extern "C"
 	bool omp_netcode_read_client_check_response(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeClientCheckResponse* out);
 	bool omp_netcode_read_chat_message(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeChatMessage* out);
 	bool omp_netcode_read_command_message(const uint8_t* data, size_t bits, size_t* offset, OmpNetcodeCommandMessage* out);
+
+	int8_t omp_netcode_weapon_slot(uint8_t weapon);
+	bool omp_netcode_weapon_shootable(uint8_t weapon);
+	uint32_t omp_netcode_keys_with_additional_key(uint16_t keys, uint8_t additionalKey);
+	bool omp_netcode_vehicle_surfing_offset_ok(OmpNetcodeVec3 offset);
+	uint16_t omp_netcode_foot_keys_for_broadcast(uint16_t keys, uint32_t armedWeapon);
+	bool omp_netcode_aim_front_vector_ok(OmpNetcodeVec3 front);
+	uint8_t omp_netcode_aim_cam_mode(uint8_t mode);
+	float omp_netcode_aim_cam_zoom(uint8_t zoom);
+	float omp_netcode_aim_aspect_ratio(uint8_t aspectRatio);
+	bool omp_netcode_bullet_in_bounds(uint8_t hitType, OmpNetcodeVec3 origin, OmpNetcodeVec3 offset);
+	bool omp_netcode_unoccupied_motion_ok(OmpNetcodeVec3 angularVelocity, OmpNetcodeVec3 roll, OmpNetcodeVec3 rotation);
+	bool omp_netcode_trailer_turn_velocity_ok(OmpNetcodeVec3 turnVelocity);
+	OmpNetcodeVec4 omp_netcode_trailer_quat_normalised(OmpNetcodeVec4 quat);
 }
 
 // Must match the Rust definitions, which assert the same sizes.
@@ -296,6 +311,16 @@ namespace Rust
 		inline GTAQuat toCpp(const OmpNetcodeQuat& q)
 		{
 			return GTAQuat(q.w, q.x, q.y, q.z);
+		}
+
+		inline OmpNetcodeVec3 toRust(const Vector3& v)
+		{
+			return OmpNetcodeVec3 { v.x, v.y, v.z };
+		}
+
+		inline OmpNetcodeVec4 toRust(const Vector4& v)
+		{
+			return OmpNetcodeVec4 { v.x, v.y, v.z, v.w };
 		}
 
 		template <size_t Size>
@@ -555,6 +580,81 @@ namespace Rust
 			{
 				detail::toCpp(r.message, out.message);
 			});
+	}
+
+	/// Checks and fix-ups for decoded sync data (`checks.rs`).
+
+	/// `WeaponSlotData::slot`.
+	inline int8_t weaponSlot(uint8_t weapon)
+	{
+		return omp_netcode_weapon_slot(weapon);
+	}
+
+	/// `WeaponSlotData::shootable`.
+	inline bool weaponShootable(uint8_t weapon)
+	{
+		return omp_netcode_weapon_shootable(weapon);
+	}
+
+	/// A sync packet's keys plus the extra key packed beside its weapon.
+	inline uint32_t keysWithAdditionalKey(uint16_t keys, uint8_t additionalKey)
+	{
+		return omp_netcode_keys_with_additional_key(keys, additionalKey);
+	}
+
+	/// Whether to believe a player is surfing a vehicle at this offset (a far one is the old
+	/// "invisible" cheat).
+	inline bool vehicleSurfingOffsetOk(const Vector3& offset)
+	{
+		return omp_netcode_vehicle_surfing_offset_ok(detail::toRust(offset));
+	}
+
+	/// The keys to send other players for someone on foot holding `armedWeapon` (no firing goggles,
+	/// no aiming detonators).
+	inline uint16_t footKeysForBroadcast(uint16_t keys, uint32_t armedWeapon)
+	{
+		return omp_netcode_foot_keys_for_broadcast(keys, armedWeapon);
+	}
+
+	inline bool aimFrontVectorOk(const Vector3& front)
+	{
+		return omp_netcode_aim_front_vector_ok(detail::toRust(front));
+	}
+
+	/// The camera mode to keep: invalid ones become 4.
+	inline uint8_t aimCamMode(uint8_t mode)
+	{
+		return omp_netcode_aim_cam_mode(mode);
+	}
+
+	inline float aimCamZoom(uint8_t zoom)
+	{
+		return omp_netcode_aim_cam_zoom(zoom);
+	}
+
+	inline float aimAspectRatio(uint8_t aspectRatio)
+	{
+		return omp_netcode_aim_aspect_ratio(aspectRatio);
+	}
+
+	inline bool bulletInBounds(uint8_t hitType, const Vector3& origin, const Vector3& offset)
+	{
+		return omp_netcode_bullet_in_bounds(hitType, detail::toRust(origin), detail::toRust(offset));
+	}
+
+	inline bool unoccupiedMotionOk(const Vector3& angularVelocity, const Vector3& roll, const Vector3& rotation)
+	{
+		return omp_netcode_unoccupied_motion_ok(detail::toRust(angularVelocity), detail::toRust(roll), detail::toRust(rotation));
+	}
+
+	inline bool trailerTurnVelocityOk(const Vector3& turnVelocity)
+	{
+		return omp_netcode_trailer_turn_velocity_ok(detail::toRust(turnVelocity));
+	}
+
+	inline Vector4 trailerQuatNormalised(const Vector4& quat)
+	{
+		return detail::toCpp(omp_netcode_trailer_quat_normalised(detail::toRust(quat)));
 	}
 }
 }

@@ -33,6 +33,7 @@ add_executable(component-tests
 	gangzones.cpp
 	netcode.cpp
 	pickups.cpp
+	sync_checks.cpp
 	textlabels.cpp
 	timers.cpp
 	variables.cpp

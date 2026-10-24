@@ -264,8 +264,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 					return false;
 				}
 
-				auto slot = WeaponSlotData(onPlayerGiveTakeDamageRPC.WeaponID).slot();
-				if (slot == INVALID_WEAPON_SLOT)
+				if (NetCode::Rust::weaponSlot(onPlayerGiveTakeDamageRPC.WeaponID) == INVALID_WEAPON_SLOT)
 				{
 					return false;
 				}
@@ -682,8 +681,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 
 			Player& player = static_cast<Player&>(peer);
 
-			auto slot = WeaponSlotData(footSync.Weapon).slot();
-			if (slot == INVALID_WEAPON_SLOT)
+			if (NetCode::Rust::weaponSlot(footSync.Weapon) == INVALID_WEAPON_SLOT)
 			{
 				return false;
 			}
@@ -724,7 +722,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 				}
 
 				// Fix for old 'Invisible' cheat.
-				if (glm::dot(footSync.SurfingData.offset, footSync.SurfingData.offset) >= 50.0f * 50.0f)
+				if (!NetCode::Rust::vehicleSurfingOffsetOk(footSync.SurfingData.offset))
 				{
 					footSync.SurfingData.type = PlayerSurfingData::Type::None;
 				}
@@ -733,19 +731,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 			player.surfing_ = footSync.SurfingData;
 			player.action_ = PlayerSpecialAction(footSync.SpecialAction);
 
-			uint32_t newKeys = footSync.Keys;
-			switch (footSync.AdditionalKey)
-			{
-			case 1:
-				newKeys |= Key::YES;
-				break;
-			case 2:
-				newKeys |= Key::NO;
-				break;
-			case 3:
-				newKeys |= Key::CTRL_BACK;
-				break;
-			}
+			uint32_t newKeys = NetCode::Rust::keysWithAdditionalKey(footSync.Keys, footSync.AdditionalKey);
 
 			player.keys_.leftRight = footSync.LeftRight;
 			player.keys_.upDown = footSync.UpDown;
@@ -772,17 +758,9 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 			if (allowedupdate)
 			{
 
-				// Fix Night Vision & Thermal Goggles visual effect show for all streamed players.
-				if ((player.armedWeapon_ == PlayerWeapon_Night_Vis_Goggles || player.armedWeapon_ == PlayerWeapon_Thermal_Goggles))
-				{
-					footSync.Keys &= ~Key::FIRE;
-				}
-
-				// Fix detonator crasher.
-				if (player.armedWeapon_ == PlayerWeapon_Bomb)
-				{
-					footSync.Keys &= ~Key::AIM;
-				}
+				// Fix Night Vision & Thermal Goggles visual effect show for all streamed players, and
+				// detonator crasher.
+				footSync.Keys = NetCode::Rust::footKeysForBroadcast(footSync.Keys, player.armedWeapon_);
 
 				player.footSync_ = footSync;
 				player.primarySyncUpdateType_ = PrimarySyncUpdateType::OnFoot;
@@ -861,8 +839,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 				return false;
 			}
 
-			const float frontvec = glm::dot(aimSync.CamFrontVector, aimSync.CamFrontVector);
-			if (frontvec > 0.0 && frontvec < 1.5)
+			if (NetCode::Rust::aimFrontVectorOk(aimSync.CamFrontVector))
 			{
 
 				Player& player = static_cast<Player&>(peer);
@@ -871,23 +848,12 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 				player.aimingData_.camFrontVector = aimSync.CamFrontVector;
 				player.aimingData_.camMode = aimSync.CamMode;
 				player.aimingData_.camPos = aimSync.CamPos;
-				player.aimingData_.camZoom = aimSync.CamZoom * 0.015873017f * 35.f + 35.f;
+				player.aimingData_.camZoom = NetCode::Rust::aimCamZoom(aimSync.CamZoom);
 				player.aimingData_.weaponState = PlayerWeaponState(aimSync.WeaponState);
-				player.aimingData_.aspectRatio = (aimSync.AspectRatio * 1.f / 255) + 1.f;
+				player.aimingData_.aspectRatio = NetCode::Rust::aimAspectRatio(aimSync.AspectRatio);
 
-				// Check for invalid camera modes
-				// https://gtag.sannybuilder.com/sanandreas/camera-modes/
-				if (aimSync.CamMode < 3u || aimSync.CamMode == 5u || aimSync.CamMode == 6u
-					|| (aimSync.CamMode >= 9u && aimSync.CamMode <= 13u) || aimSync.CamMode == 17u
-					|| (aimSync.CamMode >= 19u && aimSync.CamMode <= 21u)
-					|| (aimSync.CamMode >= 23u && aimSync.CamMode <= 28u)
-					|| (aimSync.CamMode >= 30u && aimSync.CamMode <= 45u)
-					|| (aimSync.CamMode >= 48u && aimSync.CamMode <= 50u)
-					|| aimSync.CamMode == 52u || aimSync.CamMode == 54u
-					|| aimSync.CamMode == 60u || aimSync.CamMode == 61u || aimSync.CamMode > 64u)
-				{
-					aimSync.CamMode = 4u;
-				}
+				// Replace invalid camera modes
+				aimSync.CamMode = NetCode::Rust::aimCamMode(aimSync.CamMode);
 
 				aimSync.PlayerID = player.poolID;
 				player.aimSync_ = aimSync;
@@ -940,7 +906,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 
 			Player& player = static_cast<Player&>(peer);
 
-			if (!WeaponSlotData { bulletSync.WeaponID }.shootable())
+			if (!NetCode::Rust::weaponShootable(bulletSync.WeaponID))
 			{
 				return false; // They're sending data for a weapon that doesn't shoot
 			}
@@ -1009,18 +975,9 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 
 			// Check if hitid is valid for vehicles/objects
 
-			static const float bounds = 20000.0f * 20000.0f;
-			if (glm::dot(bulletSync.Origin, bulletSync.Origin) > bounds)
+			if (!NetCode::Rust::bulletInBounds(bulletSync.HitType, bulletSync.Origin, bulletSync.Offset))
 			{
-				return false; // OOB origin
-			}
-			if (bulletSync.HitType == PlayerBulletHitType_None && glm::dot(bulletSync.Offset, bulletSync.Offset) > bounds)
-			{
-				return false; // OOB shot
-			}
-			else if (bulletSync.HitType != PlayerBulletHitType_None && glm::dot(bulletSync.Offset, bulletSync.Offset) > 1000.0f * 1000.0f)
-			{
-				return false; // OOB shot
+				return false; // OOB origin or shot
 			}
 
 			player.bulletData_.offset = bulletSync.Offset;
@@ -1133,8 +1090,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 				return false;
 			}
 
-			auto slot = WeaponSlotData(vehicleSync.WeaponID).slot();
-			if (slot == INVALID_WEAPON_SLOT)
+			if (NetCode::Rust::weaponSlot(vehicleSync.WeaponID) == INVALID_WEAPON_SLOT)
 			{
 				return false;
 			}
@@ -1155,19 +1111,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 			player.armour_ = vehicleSync.PlayerHealthArmour.y;
 			player.armedWeapon_ = player.areWeaponsAllowed() ? vehicleSync.WeaponID : 0;
 
-			uint32_t newKeys = vehicleSync.Keys;
-			switch (vehicleSync.AdditionalKey)
-			{
-			case 1:
-				newKeys |= Key::YES;
-				break;
-			case 2:
-				newKeys |= Key::NO;
-				break;
-			case 3:
-				newKeys |= Key::CTRL_BACK;
-				break;
-			}
+			uint32_t newKeys = NetCode::Rust::keysWithAdditionalKey(vehicleSync.Keys, vehicleSync.AdditionalKey);
 
 			player.keys_.leftRight = vehicleSync.LeftRight;
 			player.keys_.upDown = vehicleSync.UpDown;
@@ -1388,8 +1332,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 				return false;
 			}
 
-			auto slot = WeaponSlotData(passengerSync.WeaponID).slot();
-			if (slot == INVALID_WEAPON_SLOT)
+			if (NetCode::Rust::weaponSlot(passengerSync.WeaponID) == INVALID_WEAPON_SLOT)
 			{
 				return false;
 			}
@@ -1417,19 +1360,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 			player.armour_ = passengerSync.HealthArmour.y;
 			player.armedWeapon_ = player.areWeaponsAllowed() ? passengerSync.WeaponID : 0;
 
-			uint32_t newKeys = passengerSync.Keys;
-			switch (passengerSync.AdditionalKey)
-			{
-			case 1:
-				newKeys |= Key::YES;
-				break;
-			case 2:
-				newKeys |= Key::NO;
-				break;
-			case 3:
-				newKeys |= Key::CTRL_BACK;
-				break;
-			}
+			uint32_t newKeys = NetCode::Rust::keysWithAdditionalKey(passengerSync.Keys, passengerSync.AdditionalKey);
 
 			player.keys_.leftRight = passengerSync.LeftRight;
 			player.keys_.upDown = passengerSync.UpDown;
@@ -1479,16 +1410,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 				return false;
 			}
 
-			if (unoccupiedSync.AngularVelocity.x < -1.0f || unoccupiedSync.AngularVelocity.x > 1.0f
-				|| unoccupiedSync.AngularVelocity.y < -1.0f || unoccupiedSync.AngularVelocity.y > 1.0f
-				|| unoccupiedSync.AngularVelocity.z < -1.0f || unoccupiedSync.AngularVelocity.z > 1.0f)
-			{
-				return false;
-			}
-
-			if (glm::abs(1.0 - glm::length(unoccupiedSync.Roll)) >= 0.000001
-				|| glm::abs(1.0 - glm::length(unoccupiedSync.Rotation)) >= 0.000001
-				|| glm::abs(glm::dot(unoccupiedSync.Roll, unoccupiedSync.Rotation)) >= 0.000001)
+			if (!NetCode::Rust::unoccupiedMotionOk(unoccupiedSync.AngularVelocity, unoccupiedSync.Roll, unoccupiedSync.Rotation))
 			{
 				return false;
 			}
@@ -1560,9 +1482,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 				return false;
 			}
 
-			if (trailerSync.TurnVelocity.x < -1.0f || trailerSync.TurnVelocity.x > 1.0f
-				|| trailerSync.TurnVelocity.y < -1.0f || trailerSync.TurnVelocity.y > 1.0f
-				|| trailerSync.TurnVelocity.z < -1.0f || trailerSync.TurnVelocity.z > 1.0f)
+			if (!NetCode::Rust::trailerTurnVelocityOk(trailerSync.TurnVelocity))
 			{
 				return false;
 			}
@@ -1590,18 +1510,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 			}
 
 			// Normalise quaternions
-			float magnitude = glm::length(trailerSync.Quat);
-			if (std::abs(1.0f - magnitude) >= 0.000001f)
-			{
-				if (magnitude < 0.1f)
-				{
-					trailerSync.Quat = glm::vec4(0.5f);
-				}
-				else
-				{
-					trailerSync.Quat /= magnitude;
-				}
-			}
+			trailerSync.Quat = NetCode::Rust::trailerQuatNormalised(trailerSync.Quat);
 
 			if (vehicle.updateFromTrailerSync(trailerSync, peer))
 			{

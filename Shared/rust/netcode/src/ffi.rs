@@ -93,3 +93,74 @@ decoders! {
 	omp_netcode_read_chat_message => crate::rpcs::ChatMessage;
 	omp_netcode_read_command_message => crate::rpcs::CommandMessage;
 }
+
+// Checks on decoded sync data; see `checks.rs`.
+
+use crate::checks;
+use crate::packets::Vec4;
+use omp_common::Vec3;
+
+#[unsafe(no_mangle)]
+pub extern "C" fn omp_netcode_weapon_slot(weapon: u8) -> i8 {
+	checks::weapon_slot(weapon)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn omp_netcode_weapon_shootable(weapon: u8) -> bool {
+	checks::weapon_shootable(weapon)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn omp_netcode_keys_with_additional_key(keys: u16, additional_key: u8) -> u32 {
+	checks::keys_with_additional_key(keys, additional_key)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn omp_netcode_vehicle_surfing_offset_ok(offset: Vec3) -> bool {
+	checks::vehicle_surfing_offset_ok(offset)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn omp_netcode_foot_keys_for_broadcast(keys: u16, armed_weapon: u32) -> u16 {
+	checks::foot_keys_for_broadcast(keys, armed_weapon)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn omp_netcode_aim_front_vector_ok(front: Vec3) -> bool {
+	checks::aim_front_vector_ok(front)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn omp_netcode_aim_cam_mode(mode: u8) -> u8 {
+	checks::aim_cam_mode(mode)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn omp_netcode_aim_cam_zoom(zoom: u8) -> f32 {
+	checks::aim_cam_zoom(zoom)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn omp_netcode_aim_aspect_ratio(aspect_ratio: u8) -> f32 {
+	checks::aim_aspect_ratio(aspect_ratio)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn omp_netcode_bullet_in_bounds(hit_type: u8, origin: Vec3, offset: Vec3) -> bool {
+	checks::bullet_in_bounds(hit_type, origin, offset)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn omp_netcode_unoccupied_motion_ok(angular_velocity: Vec3, roll: Vec3, rotation: Vec3) -> bool {
+	checks::unoccupied_motion_ok(angular_velocity, roll, rotation)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn omp_netcode_trailer_turn_velocity_ok(turn_velocity: Vec3) -> bool {
+	checks::trailer_turn_velocity_ok(turn_velocity)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn omp_netcode_trailer_quat_normalised(quat: Vec4) -> Vec4 {
+	checks::trailer_quat_normalised(quat)
+}

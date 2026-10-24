@@ -9,6 +9,7 @@
 //! Decoding of packets and RPCs sent by clients: data the server can't trust, read in safe Rust.
 
 pub mod bitstream;
+pub mod checks;
 mod ffi;
 pub mod packets;
 pub mod rpcs;
