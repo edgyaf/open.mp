@@ -6,6 +6,7 @@
  *  The original code is copyright (c) 2022, open.mp team and contributors.
  */
 
+#include "textlabels_rs.hpp"
 #include <Impl/pool_impl.hpp>
 #include <Server/Components/TextLabels/textlabels.hpp>
 #include <Server/Components/Vehicles/vehicles.hpp>
@@ -14,25 +15,47 @@
 
 using namespace Impl;
 
+// Label properties and the streaming decision live in Rust (see `rust/`). The attachment data stays
+// here because the SDK hands it out by reference.
+
+inline OmpTextLabelsVec3 toRust(const Vector3& v)
+{
+	return OmpTextLabelsVec3 { v.x, v.y, v.z };
+}
+
+inline Vector3 fromRust(const OmpTextLabelsVec3& v)
+{
+	return Vector3(v.x, v.y, v.z);
+}
+
+inline OmpTextLabelsColour toRust(const Colour& colour)
+{
+	return OmpTextLabelsColour { colour.r, colour.g, colour.b, colour.a };
+}
+
+inline Colour fromRust(const OmpTextLabelsColour& colour)
+{
+	return Colour(colour.r, colour.g, colour.b, colour.a);
+}
+
 template <class T>
 class TextLabelBase : public T, public PoolIDProvider, public NoCopy
 {
+protected:
+	OmpTextLabelsLabel* const state_;
+
 private:
-	HybridString<32> text;
-	Vector3 pos;
-	Colour colour;
-	float drawDist;
 	TextLabelAttachmentData attachmentData;
-	bool testLOS;
 
 public:
-	TextLabelBase(StringView text, Colour colour, Vector3 pos, float drawDist, bool testLOS)
-		: text(text)
-		, pos(pos)
-		, colour(colour)
-		, drawDist(drawDist)
-		, testLOS(testLOS)
+	TextLabelBase(StringView text, Colour colour, Vector3 pos, float drawDist, int vw, bool testLOS)
+		: state_(omp_textlabels_label_new(text.data(), text.length(), toRust(colour), toRust(pos), drawDist, vw, testLOS))
 	{
+	}
+
+	~TextLabelBase()
+	{
+		omp_textlabels_label_free(state_);
 	}
 
 	virtual void restream() = 0;
@@ -44,12 +67,12 @@ public:
 
 	Vector3 getPosition() const override
 	{
-		return pos;
+		return fromRust(omp_textlabels_label_get_position(state_));
 	}
 
 	void setPosition(Vector3 position) override
 	{
-		pos = position;
+		omp_textlabels_label_set_position(state_, toRust(position));
 		restream();
 	}
 
@@ -63,47 +86,50 @@ public:
 
 	void setText(StringView txt) override
 	{
-		text = txt;
+		omp_textlabels_label_set_text(state_, txt.data(), txt.length());
 		restream();
 	}
 
 	StringView getText() const override
 	{
-		return text;
+		const char* ptr;
+		size_t len;
+		omp_textlabels_label_get_text(state_, &ptr, &len);
+		return StringView(ptr, len);
 	}
 
 	void setColour(Colour col) override
 	{
-		colour = col;
+		omp_textlabels_label_set_colour(state_, toRust(col));
 		restream();
 	}
 
 	Colour getColour() const override
 	{
-		return colour;
+		return fromRust(omp_textlabels_label_get_colour(state_));
 	}
 
 	void setDrawDistance(float dist) override
 	{
-		drawDist = dist;
+		omp_textlabels_label_set_draw_distance(state_, dist);
 		restream();
 	}
 
 	float getDrawDistance() override
 	{
-		return drawDist;
+		return omp_textlabels_label_get_draw_distance(state_);
 	}
 
 	void attachToPlayer(IPlayer& player, Vector3 offset) override
 	{
-		pos = offset;
+		omp_textlabels_label_set_position(state_, toRust(offset));
 		attachmentData.playerID = player.getID();
 		restream();
 	}
 
 	void attachToVehicle(IVehicle& vehicle, Vector3 offset) override
 	{
-		pos = offset;
+		omp_textlabels_label_set_position(state_, toRust(offset));
 		attachmentData.vehicleID = vehicle.getID();
 		restream();
 	}
@@ -115,25 +141,25 @@ public:
 
 	void setTestLOS(bool status) override
 	{
-		testLOS = status;
+		omp_textlabels_label_set_test_los(state_, status);
 		restream();
 	}
 
 	bool getTestLOS() const override
 	{
-		return testLOS;
+		return omp_textlabels_label_get_test_los(state_);
 	}
 
 	void detachFromPlayer(Vector3 position) override
 	{
-		pos = position;
+		omp_textlabels_label_set_position(state_, toRust(position));
 		attachmentData.playerID = INVALID_PLAYER_ID;
 		restream();
 	}
 
 	void detachFromVehicle(Vector3 position) override
 	{
-		pos = position;
+		omp_textlabels_label_set_position(state_, toRust(position));
 		attachmentData.vehicleID = INVALID_VEHICLE_ID;
 		restream();
 	}
@@ -143,13 +169,13 @@ public:
 		NetCode::RPC::PlayerShowTextLabel showTextLabelRPC;
 		showTextLabelRPC.PlayerTextLabel = isPlayerTextLabel;
 		showTextLabelRPC.TextLabelID = poolID;
-		showTextLabelRPC.Col = colour;
-		showTextLabelRPC.Position = pos;
-		showTextLabelRPC.DrawDistance = drawDist;
-		showTextLabelRPC.LOS = testLOS;
+		showTextLabelRPC.Col = getColour();
+		showTextLabelRPC.Position = getPosition();
+		showTextLabelRPC.DrawDistance = omp_textlabels_label_get_draw_distance(state_);
+		showTextLabelRPC.LOS = getTestLOS();
 		showTextLabelRPC.PlayerAttachID = attachmentData.playerID;
 		showTextLabelRPC.VehicleAttachID = attachmentData.vehicleID;
-		showTextLabelRPC.Text = StringView(text);
+		showTextLabelRPC.Text = getText();
 		PacketHelper::send(showTextLabelRPC, player);
 	}
 
@@ -163,8 +189,8 @@ public:
 
 	void setColourAndText(Colour col, StringView txt) override
 	{
-		colour = col;
-		text = txt;
+		omp_textlabels_label_set_colour(state_, toRust(col));
+		omp_textlabels_label_set_text(state_, txt.data(), txt.length());
 		restream();
 	}
 };
@@ -172,7 +198,6 @@ public:
 class TextLabel final : public TextLabelBase<ITextLabel>
 {
 private:
-	int virtualWorld;
 	UniqueIDArray<IPlayer, PLAYER_POOL_SIZE> streamedFor_;
 
 public:
@@ -185,9 +210,14 @@ public:
 	}
 
 	TextLabel(StringView text, Colour colour, Vector3 pos, float drawDist, int vw, bool los)
-		: TextLabelBase(text, colour, pos, drawDist, los)
-		, virtualWorld(vw)
+		: TextLabelBase(text, colour, pos, drawDist, vw, los)
 	{
+	}
+
+	/// Whether a player in this virtual world can see the label, if it isn't attached to anything.
+	bool worldMatches(int vw) const
+	{
+		return omp_textlabels_label_world_matches(state_, vw);
 	}
 
 	void restream() override
@@ -218,12 +248,12 @@ public:
 
 	int getVirtualWorld() const override
 	{
-		return virtualWorld;
+		return omp_textlabels_label_get_virtual_world(state_);
 	}
 
 	void setVirtualWorld(int vw) override
 	{
-		virtualWorld = vw;
+		omp_textlabels_label_set_virtual_world(state_, vw);
 		restream();
 	}
 
@@ -247,7 +277,7 @@ private:
 
 public:
 	PlayerTextLabel(IPlayer& player, StringView text, Colour colour, Vector3 pos, float drawDist, bool testLOS)
-		: TextLabelBase(text, colour, pos, drawDist, testLOS)
+		: TextLabelBase(text, colour, pos, drawDist, 0, testLOS)
 		, player(player)
 	{
 	}

@@ -262,8 +262,7 @@ public:
 	{
 		const TextLabelAttachmentData& data = label->getAttachmentData();
 		Vector3 pos = label->getPosition();
-		const int world = label->getVirtualWorld();
-		bool worldOrAttached = player.getVirtualWorld() == world || world == -1;
+		bool worldOrAttached = label->worldMatches(player.getVirtualWorld());
 
 		IPlayer* textLabelPlayer = players->get(data.playerID);
 		if (textLabelPlayer)
@@ -281,9 +280,7 @@ public:
 			}
 		}
 
-		const PlayerState state = player.getState();
-		const Vector3 dist3D = pos - player.getPosition();
-		const bool shouldBeStreamedIn = state != PlayerState_None && worldOrAttached && glm::dot(dist3D, dist3D) < maxDist;
+		const bool shouldBeStreamedIn = omp_textlabels_should_stream_in(player.getState() != PlayerState_None, worldOrAttached, toRust(pos), toRust(player.getPosition()), maxDist);
 
 		const bool isStreamedIn = label->isStreamedInForPlayer(player);
 		if (!isStreamedIn && shouldBeStreamedIn)
