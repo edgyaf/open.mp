@@ -22,7 +22,7 @@ TARGETS = [
 
 SKIP = {
 	"IEntity": {"getPosition", "setPosition", "getVirtualWorld", "setVirtualWorld"},
-	"IPlayer": {"getNetworkData", "getName", "getState"},
+	"IPlayer": {"getNetworkData", "getName", "getState", "isStreamedInForPlayer"},
 	"IPlayerPool": {
 		"entries",
 		"players",

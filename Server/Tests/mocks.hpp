@@ -155,6 +155,14 @@ struct MockPlayer final : public IPlayer
 		return state;
 	}
 
+	/// Players this player is streamed in for.
+	FlatHashSet<const IPlayer*> streamedFor;
+
+	bool isStreamedInForPlayer(const IPlayer& other) const override
+	{
+		return streamedFor.find(&other) != streamedFor.end();
+	}
+
 	MOCK_STUBS_IEntity
 		MOCK_STUBS_IPlayer
 };

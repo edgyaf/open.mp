@@ -6,6 +6,7 @@ set(tested_components
 	Checkpoints
 	GangZones
 	Pickups
+	TextLabels
 	Timers
 	Variables
 )
@@ -31,6 +32,7 @@ add_executable(component-tests
 	checkpoints.cpp
 	gangzones.cpp
 	pickups.cpp
+	textlabels.cpp
 	timers.cpp
 	variables.cpp
 	harness.hpp
