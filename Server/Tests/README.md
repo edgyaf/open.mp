@@ -28,7 +28,7 @@ component-tests --baseline path/to/old/build/Output/RelWithDebInfo/Server/compon
 
 Checks written with `CHECK_PORTED` cover behaviour a port changed on purpose (for example undefined behaviour that is now handled) and are skipped in baseline runs. Everything else must pass on both.
 
-The last pure C++ versions of the components ported so far are at commit `72bf89ce`.
+The last pure C++ versions of the components ported so far: Timers, Variables, Checkpoints and GangZones at `72bf89ce`; Pickups at `080e5872`.
 
 ## Writing tests
 

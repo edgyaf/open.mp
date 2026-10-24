@@ -8,24 +8,17 @@
 
 #include "pickup.hpp"
 #include <Impl/events_impl.hpp>
-#include <legacy_id_mapper.hpp>
 
 using namespace Impl;
 
-// TODO: This internal/external IDs mapping code should be extracted for other components to use.
 class PlayerPickupData final : public IPlayerPickupData
 {
 private:
-	FiniteLegacyIDMapper<PICKUP_POOL_SIZE>
+	PickupIDMapper
 		legacyIDs_,
 		clientIDs_;
 
 public:
-	PlayerPickupData()
-	{
-		reset();
-	}
-
 	virtual void freeExtension() override
 	{
 		delete this;
@@ -33,12 +26,8 @@ public:
 
 	virtual void reset() override
 	{
-		// Clear all the IDs.
-		for (int i = 0; i != PICKUP_POOL_SIZE; ++i)
-		{
-			legacyIDs_.release(i);
-			clientIDs_.release(i);
-		}
+		legacyIDs_.releaseAll();
+		clientIDs_.releaseAll();
 	}
 
 	virtual int toLegacyID(int zoneid) const override
@@ -103,7 +92,7 @@ private:
 	DefaultEventDispatcher<PickupEventHandler> eventDispatcher;
 	IPlayerPool* players = nullptr;
 	StreamConfigHelper streamConfigHelper;
-	FiniteLegacyIDMapper<PICKUP_POOL_SIZE> legacyIDs_;
+	PickupIDMapper legacyIDs_;
 
 	struct PlayerPickUpPickupEventHandler : public SingleNetworkInEventHandler
 	{
@@ -223,11 +212,7 @@ public:
 	{
 		// Destroy all stored entity instances.
 		storage.clear();
-		// Clear all the IDs.
-		for (int i = 0; i != PICKUP_POOL_SIZE; ++i)
-		{
-			legacyIDs_.release(i);
-		}
+		legacyIDs_.releaseAll();
 	}
 
 	Pair<size_t, size_t> bounds() const override
@@ -291,8 +276,7 @@ public:
 			{
 				Pickup* pickup = static_cast<Pickup*>(p);
 
-				const Vector3 dist3D = pickup->getPosition() - pos;
-				const bool shouldBeStreamedIn = !pickup->isPickupHiddenForPlayer(player) && (player.getVirtualWorld() == pickup->getVirtualWorld() || pickup->getVirtualWorld() == -1) && glm::dot(dist3D, dist3D) < maxDist;
+				const bool shouldBeStreamedIn = pickup->shouldStreamIn(player, pos, maxDist);
 
 				const bool isStreamedIn = pickup->isStreamedInForPlayer(player);
 				if (!isStreamedIn && shouldBeStreamedIn)

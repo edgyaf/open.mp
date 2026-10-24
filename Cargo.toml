@@ -6,6 +6,7 @@ resolver = "3"
 members = [
 	"Server/Components/Checkpoints/rust",
 	"Server/Components/GangZones/rust",
+	"Server/Components/Pickups/rust",
 	"Server/Components/Timers/rust",
 	"Server/Components/Variables/rust",
 	"Shared/rust/common",

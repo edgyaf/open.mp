@@ -6,6 +6,7 @@
  *  The original code is copyright (c) 2022, open.mp team and contributors.
  */
 
+#include "pickups_rs.hpp"
 #include <Impl/pool_impl.hpp>
 #include <Server/Components/Pickups/pickups.hpp>
 #include <netcode.hpp>
@@ -13,16 +14,67 @@
 
 using namespace Impl;
 
+// Pickup properties, hidden state, streaming decisions and ID mapping live in Rust (see `rust/`).
+// The "streamed for" set stays here because restreaming needs the player objects.
+
+inline OmpPickupsVec3 toRust(const Vector3& v)
+{
+	return OmpPickupsVec3 { v.x, v.y, v.z };
+}
+
+inline Vector3 fromRust(const OmpPickupsVec3& v)
+{
+	return Vector3(v.x, v.y, v.z);
+}
+
+/// Owning handle to a Rust ID mapper (`FiniteLegacyIDMapper<PICKUP_POOL_SIZE>`).
+class PickupIDMapper final : public NoCopy
+{
+private:
+	OmpPickupsIDs* const ids_ = omp_pickups_ids_new();
+
+public:
+	~PickupIDMapper()
+	{
+		omp_pickups_ids_free(ids_);
+	}
+
+	int reserve() const
+	{
+		return omp_pickups_ids_reserve(ids_);
+	}
+
+	void set(int legacy, int real)
+	{
+		omp_pickups_ids_set(ids_, legacy, real);
+	}
+
+	void release(int legacy)
+	{
+		omp_pickups_ids_release(ids_, legacy);
+	}
+
+	void releaseAll()
+	{
+		omp_pickups_ids_release_all(ids_);
+	}
+
+	int toLegacy(int real) const
+	{
+		return omp_pickups_ids_to_legacy(ids_, real);
+	}
+
+	int fromLegacy(int legacy) const
+	{
+		return omp_pickups_ids_from_legacy(ids_, legacy);
+	}
+};
+
 class Pickup final : public IPickup, public PoolIDProvider, public NoCopy
 {
 private:
-	int virtualWorld;
-	int modelId;
-	Vector3 pos;
+	OmpPickupsPickup* const state_;
 	UniqueIDArray<IPlayer, PLAYER_POOL_SIZE> streamedFor_;
-	UniqueIDArray<IPlayer, PLAYER_POOL_SIZE> hiddenFor_;
-	PickupType type;
-	bool isStatic_;
 	IPlayer* legacyPerPlayer_ = nullptr;
 
 	void restream()
@@ -49,9 +101,9 @@ private:
 				data->setClientID(id, poolID);
 				NetCode::RPC::PlayerCreatePickup createPickupRPC;
 				createPickupRPC.PickupID = id;
-				createPickupRPC.Model = modelId;
-				createPickupRPC.Type = type;
-				createPickupRPC.Position = pos;
+				createPickupRPC.Model = getModel();
+				createPickupRPC.Type = getType();
+				createPickupRPC.Position = getPosition();
 				PacketHelper::send(createPickupRPC, player);
 			}
 		}
@@ -84,16 +136,18 @@ public:
 
 	inline bool isStatic() const
 	{
-		return isStatic_;
+		return omp_pickups_pickup_is_static(state_);
 	}
 
 	Pickup(int modelId, PickupType type, Vector3 pos, uint32_t virtualWorld, bool isStatic)
-		: virtualWorld(virtualWorld)
-		, modelId(modelId)
-		, pos(pos)
-		, type(type)
-		, isStatic_(isStatic)
+		: state_(omp_pickups_pickup_new(modelId, type, toRust(pos), static_cast<int>(virtualWorld), isStatic))
 	{
+	}
+
+	/// Whether the pickup should be streamed in for the player, given their current state.
+	bool shouldStreamIn(const IPlayer& player, Vector3 playerPos, float maxDistanceSqr) const
+	{
+		return omp_pickups_pickup_should_stream_in(state_, player.getID(), player.getVirtualWorld(), toRust(playerPos), maxDistanceSqr);
 	}
 
 	bool isStreamedInForPlayer(const IPlayer& player) const override
@@ -115,47 +169,22 @@ public:
 
 	bool isPickupHiddenForPlayer(IPlayer& player) const override
 	{
-		if (legacyPerPlayer_ == nullptr)
-		{
-			return hiddenFor_.valid(player.getID());
-		}
-		else
-		{
-			// Hidden if this isn't the legacy player.
-			return legacyPerPlayer_ != &player;
-		}
+		return omp_pickups_pickup_is_hidden_for(state_, player.getID());
 	}
 
 	void setPickupHiddenForPlayer(IPlayer& player, bool hidden) override
 	{
-		if (legacyPerPlayer_ != nullptr)
-		{
-			// Doesn't matter if this is the right player or not.  Do nothing.
-		}
-		else if (hidden)
-		{
-			if (!isPickupHiddenForPlayer(player))
-			{
-				hiddenFor_.add(player.getID(), player);
-			}
-		}
-		else
-		{
-			if (isPickupHiddenForPlayer(player))
-			{
-				hiddenFor_.remove(player.getID(), player);
-			}
-		}
+		omp_pickups_pickup_set_hidden_for(state_, player.getID(), hidden);
 	}
 
 	int getVirtualWorld() const override
 	{
-		return virtualWorld;
+		return omp_pickups_pickup_get_virtual_world(state_);
 	}
 
 	void setVirtualWorld(int vw) override
 	{
-		virtualWorld = vw;
+		omp_pickups_pickup_set_virtual_world(state_, vw);
 		restream();
 	}
 
@@ -166,17 +195,17 @@ public:
 
 	Vector3 getPosition() const override
 	{
-		return pos;
+		return fromRust(omp_pickups_pickup_get_position(state_));
 	}
 
 	void setPositionNoUpdate(Vector3 position) override
 	{
-		pos = position;
+		omp_pickups_pickup_set_position(state_, toRust(position));
 	}
 
 	void setPosition(Vector3 position) override
 	{
-		pos = position;
+		omp_pickups_pickup_set_position(state_, toRust(position));
 		restream();
 	}
 
@@ -186,7 +215,7 @@ public:
 
 	void setType(PickupType t, bool update) override
 	{
-		type = t;
+		omp_pickups_pickup_set_type(state_, t);
 		if (update)
 		{
 			restream();
@@ -195,12 +224,12 @@ public:
 
 	PickupType getType() const override
 	{
-		return type;
+		return omp_pickups_pickup_get_type(state_);
 	}
 
 	void setModel(int id, bool update) override
 	{
-		modelId = id;
+		omp_pickups_pickup_set_model(state_, id);
 		if (update)
 		{
 			restream();
@@ -209,11 +238,12 @@ public:
 
 	int getModel() const override
 	{
-		return modelId;
+		return omp_pickups_pickup_get_model(state_);
 	}
 
 	~Pickup()
 	{
+		omp_pickups_pickup_free(state_);
 	}
 
 	void destream()
@@ -227,6 +257,7 @@ public:
 	virtual void setLegacyPlayer(IPlayer* player) override
 	{
 		legacyPerPlayer_ = player;
+		omp_pickups_pickup_set_legacy_owner(state_, player ? player->getID() : -1);
 	}
 
 	virtual IPlayer* getLegacyPlayer() const override
