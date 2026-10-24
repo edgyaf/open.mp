@@ -47,7 +47,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust
-        run: rustup toolchain install --profile minimal --component rustfmt,clippy
+        run: |
+          rustup toolchain install --profile minimal
+          rustup component add rustfmt clippy
+          cargo --version
+          cargo fmt --version
 
       - name: Check formatting
         run: cargo fmt --all --check
