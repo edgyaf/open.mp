@@ -18,6 +18,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "omp-netcode"
+version = "1.6.7"
+dependencies = [
+ "omp-common",
+]
+
+[[package]]
 name = "omp-pickups"
 version = "1.6.7"
 dependencies = [

@@ -31,6 +31,7 @@ add_executable(component-tests
 	main.cpp
 	checkpoints.cpp
 	gangzones.cpp
+	netcode.cpp
 	pickups.cpp
 	textlabels.cpp
 	timers.cpp
@@ -42,6 +43,8 @@ add_executable(component-tests
 
 target_include_directories(component-tests PRIVATE "${generated_dir}")
 target_link_libraries(component-tests PRIVATE OMP-SDK OMP-NetCode ${CMAKE_DL_LIBS})
+# The packet decoders are tested against the C++ ones they replace.
+link_rust_library(component-tests omp-netcode)
 target_compile_definitions(component-tests PRIVATE
 	COMPONENTS_DIR="$<TARGET_FILE_DIR:Timers>"
 	COMPONENT_SUFFIX="${CMAKE_SHARED_LIBRARY_SUFFIX}"
