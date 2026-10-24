@@ -21,6 +21,9 @@ target_link_libraries(Server PUBLIC
 	OMP-NetCode
 )
 
+# Packets sent by clients are decoded in Rust (see netcode_rs.hpp).
+link_rust_library(Server omp-netcode)
+
 target_link_libraries(Server PRIVATE
 	CONAN_PKG::nlohmann_json
 	CONAN_PKG::openssl

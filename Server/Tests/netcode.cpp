@@ -6,8 +6,9 @@
  *  The original code is copyright (c) 2022, open.mp team and contributors.
  */
 
-// Differential tests: the Rust packet decoders must accept exactly the inputs the C++ `read`
-// methods accept, decode them to the same values and consume the same number of bits.
+// Differential tests: `NetCode::Rust::read` (the Rust decoders, as the server uses them) must
+// accept exactly the inputs the packets' own `read` methods accept, decode them to the same values
+// and consume the same number of bits.
 
 #include "harness.hpp"
 #include <cmath>
@@ -159,29 +160,30 @@ bool sameBits(float a, float b)
 	return std::memcmp(&a, &b, sizeof(float)) == 0;
 }
 
-bool same(const Vector2& a, const OmpNetcodeVec2& b)
+bool same(const Vector2& a, const Vector2& b)
 {
 	return sameBits(a.x, b.x) && sameBits(a.y, b.y);
 }
 
-bool same(const Vector3& a, const OmpNetcodeVec3& b)
+bool same(const Vector3& a, const Vector3& b)
 {
 	return sameBits(a.x, b.x) && sameBits(a.y, b.y) && sameBits(a.z, b.z);
 }
 
-bool same(const Vector4& a, const OmpNetcodeVec4& b)
+bool same(const Vector4& a, const Vector4& b)
 {
 	return sameBits(a.x, b.x) && sameBits(a.y, b.y) && sameBits(a.z, b.z) && sameBits(a.w, b.w);
 }
 
-bool same(const GTAQuat& a, const OmpNetcodeQuat& b)
+bool same(const GTAQuat& a, const GTAQuat& b)
 {
-	return sameBits(a.q.w, b.w) && sameBits(a.q.x, b.x) && sameBits(a.q.y, b.y) && sameBits(a.q.z, b.z);
+	return sameBits(a.q.w, b.q.w) && sameBits(a.q.x, b.q.x) && sameBits(a.q.y, b.q.y) && sameBits(a.q.z, b.q.z);
 }
 
-/// Decode random and plausible-but-mutated inputs with both implementations and compare.
-template <class CppPacket, class RustPacket, class Generate, class RustRead, class Compare>
-void differential(Generate generate, RustRead rustRead, Compare compare)
+/// Decode random and plausible-but-mutated inputs with the packet's own `read` and with
+/// `NetCode::Rust::read`, which the server uses, and compare.
+template <class Packet, class Generate, class Compare>
+void differential(Generate generate, Compare compare)
 {
 	Rng rng;
 	int accepted = 0, rejected = 0, mismatches = 0;
@@ -205,19 +207,25 @@ void differential(Generate generate, RustRead rustRead, Compare compare)
 		const int skip = rng.range(0, 15);
 		std::vector<uint8_t> data = withPrefix(rng, payload, skip);
 
-		NetworkBitStream bs(data.data(), unsigned(data.size()), false);
-		bs.SetReadOffset(skip);
-		CppPacket cpp;
-		const bool cppOk = cpp.read(bs);
+		NetworkBitStream cppStream(data.data(), unsigned(data.size()), false);
+		cppStream.SetReadOffset(skip);
+		Packet cpp;
+		const bool cppOk = cpp.read(cppStream);
 
-		size_t offset = skip;
-		RustPacket rust {};
-		const bool rustOk = rustRead(data.data(), data.size() * 8, &offset, &rust);
+		NetworkBitStream rustStream(data.data(), unsigned(data.size()), false);
+		rustStream.SetReadOffset(skip);
+		Packet rust;
+		const bool rustOk = NetCode::Rust::read(rustStream, rust);
 
 		bool match = cppOk == rustOk;
 		if (match && cppOk)
 		{
-			match = compare(cpp, rust) && size_t(bs.GetReadOffset()) == offset;
+			match = compare(cpp, rust) && cppStream.GetReadOffset() == rustStream.GetReadOffset();
+		}
+		else if (match)
+		{
+			// A failed read must leave the stream where it was.
+			match = rustStream.GetReadOffset() == skip;
 		}
 		if (!match)
 		{
@@ -242,7 +250,7 @@ void differential(Generate generate, RustRead rustRead, Compare compare)
 
 TEST_CASE(netcode_foot_sync_matches_cpp)
 {
-	differential<NetCode::Packet::PlayerFootSync, OmpNetcodeFootSync>(
+	differential<NetCode::Packet::PlayerFootSync>(
 		[](Rng& rng)
 		{
 			auto data = build(rng, { U16, U16, U16, floats(3, 3000.0f), floats(4, 1.0f), U8, U8, U8, U8, floats(3, 60.0f), floats(3, 50.0f) });
@@ -255,65 +263,61 @@ TEST_CASE(netcode_foot_sync_matches_cpp)
 			}
 			return data;
 		},
-		omp_netcode_read_foot_sync,
-		[](const NetCode::Packet::PlayerFootSync& c, const OmpNetcodeFootSync& r)
+		[](const NetCode::Packet::PlayerFootSync& c, const NetCode::Packet::PlayerFootSync& r)
 		{
-			return c.LeftRight == r.leftRight && c.UpDown == r.upDown && c.Keys == r.keys
-				&& c.WeaponAdditionalKey == r.weaponAdditionalKey && c.Weapon == (r.weaponAdditionalKey & 0x3F) && c.AdditionalKey == (r.weaponAdditionalKey >> 6)
-				&& c.SpecialAction == r.specialAction && same(c.Position, r.position) && same(c.Rotation, r.rotation)
-				&& same(c.HealthArmour, r.healthArmour) && same(c.Velocity, r.velocity)
-				&& c.AnimationID == r.animationID && c.AnimationFlags == r.animationFlags
-				&& int(c.SurfingData.type) == r.surfingType && c.SurfingData.ID == r.surfingID && same(c.SurfingData.offset, r.surfingOffset);
+			return c.LeftRight == r.LeftRight && c.UpDown == r.UpDown && c.Keys == r.Keys
+				&& c.WeaponAdditionalKey == r.WeaponAdditionalKey && c.Weapon == r.Weapon && c.AdditionalKey == r.AdditionalKey
+				&& c.SpecialAction == r.SpecialAction && same(c.Position, r.Position) && same(c.Rotation, r.Rotation)
+				&& same(c.HealthArmour, r.HealthArmour) && same(c.Velocity, r.Velocity)
+				&& c.AnimationID == r.AnimationID && c.AnimationFlags == r.AnimationFlags
+				&& c.SurfingData.type == r.SurfingData.type && c.SurfingData.ID == r.SurfingData.ID && same(c.SurfingData.offset, r.SurfingData.offset);
 		});
 }
 
 TEST_CASE(netcode_aim_sync_matches_cpp)
 {
-	differential<NetCode::Packet::PlayerAimSync, OmpNetcodeAimSync>(
+	differential<NetCode::Packet::PlayerAimSync>(
 		[](Rng& rng)
 		{
 			return build(rng, { U8, floats(3, 1.0f), floats(3, 3000.0f), floats(1, 10.0f), U8, U8 });
 		},
-		omp_netcode_read_aim_sync,
-		[](const NetCode::Packet::PlayerAimSync& c, const OmpNetcodeAimSync& r)
+		[](const NetCode::Packet::PlayerAimSync& c, const NetCode::Packet::PlayerAimSync& r)
 		{
-			return c.CamMode == r.camMode && c.ZoomWepState == r.zoomWeaponState && c.AspectRatio == r.aspectRatio
-				&& same(c.CamFrontVector, r.camFrontVector) && same(c.CamPos, r.camPos) && sameBits(c.AimZ, r.aimZ);
+			return c.CamMode == r.CamMode && c.ZoomWepState == r.ZoomWepState && c.AspectRatio == r.AspectRatio
+				&& same(c.CamFrontVector, r.CamFrontVector) && same(c.CamPos, r.CamPos) && sameBits(c.AimZ, r.AimZ);
 		});
 }
 
 TEST_CASE(netcode_bullet_sync_matches_cpp)
 {
-	differential<NetCode::Packet::PlayerBulletSync, OmpNetcodeBulletSync>(
+	differential<NetCode::Packet::PlayerBulletSync>(
 		[](Rng& rng)
 		{
 			return build(rng, { U8, U16, floats(3, 3000.0f), floats(3, 3000.0f), floats(3, 10.0f), U8 });
 		},
-		omp_netcode_read_bullet_sync,
-		[](const NetCode::Packet::PlayerBulletSync& c, const OmpNetcodeBulletSync& r)
+		[](const NetCode::Packet::PlayerBulletSync& c, const NetCode::Packet::PlayerBulletSync& r)
 		{
-			return c.HitType == r.hitType && c.HitID == r.hitID && c.WeaponID == r.weaponID
-				&& same(c.Origin, r.origin) && same(c.HitPos, r.hitPos) && same(c.Offset, r.offset);
+			return c.HitType == r.HitType && c.HitID == r.HitID && c.WeaponID == r.WeaponID
+				&& same(c.Origin, r.Origin) && same(c.HitPos, r.HitPos) && same(c.Offset, r.Offset);
 		});
 }
 
 TEST_CASE(netcode_stats_sync_matches_cpp)
 {
-	differential<NetCode::Packet::PlayerStatsSync, OmpNetcodeStatsSync>(
+	differential<NetCode::Packet::PlayerStatsSync>(
 		[](Rng& rng)
 		{
 			return build(rng, { U32, U32 });
 		},
-		omp_netcode_read_stats_sync,
-		[](const NetCode::Packet::PlayerStatsSync& c, const OmpNetcodeStatsSync& r)
+		[](const NetCode::Packet::PlayerStatsSync& c, const NetCode::Packet::PlayerStatsSync& r)
 		{
-			return c.Money == r.money && c.DrunkLevel == r.drunkLevel;
+			return c.Money == r.Money && c.DrunkLevel == r.DrunkLevel;
 		});
 }
 
 TEST_CASE(netcode_weapons_update_matches_cpp)
 {
-	differential<NetCode::Packet::PlayerWeaponsUpdate, OmpNetcodeWeaponsUpdate>(
+	differential<NetCode::Packet::PlayerWeaponsUpdate>(
 		[](Rng& rng)
 		{
 			auto data = build(rng, { U16, U16 });
@@ -327,16 +331,15 @@ TEST_CASE(netcode_weapons_update_matches_cpp)
 			}
 			return data;
 		},
-		omp_netcode_read_weapons_update,
-		[](const NetCode::Packet::PlayerWeaponsUpdate& c, const OmpNetcodeWeaponsUpdate& r)
+		[](const NetCode::Packet::PlayerWeaponsUpdate& c, const NetCode::Packet::PlayerWeaponsUpdate& r)
 		{
-			if (c.TargetPlayer != r.targetPlayer || c.TargetActor != r.targetActor || c.WeaponDataCount != r.weaponCount)
+			if (c.TargetPlayer != r.TargetPlayer || c.TargetActor != r.TargetActor || c.WeaponDataCount != r.WeaponDataCount)
 			{
 				return false;
 			}
 			for (int i = 0; i < c.WeaponDataCount; ++i)
 			{
-				if (c.WeaponData[i].first != r.weapons[i].slot || c.WeaponData[i].second.id != r.weapons[i].id || c.WeaponData[i].second.ammo != r.weapons[i].ammo)
+				if (c.WeaponData[i].first != r.WeaponData[i].first || c.WeaponData[i].second.id != r.WeaponData[i].second.id || c.WeaponData[i].second.ammo != r.WeaponData[i].second.ammo)
 				{
 					return false;
 				}
@@ -347,75 +350,70 @@ TEST_CASE(netcode_weapons_update_matches_cpp)
 
 TEST_CASE(netcode_spectator_sync_matches_cpp)
 {
-	differential<NetCode::Packet::PlayerSpectatorSync, OmpNetcodeSpectatorSync>(
+	differential<NetCode::Packet::PlayerSpectatorSync>(
 		[](Rng& rng)
 		{
 			return build(rng, { U16, U16, U16, floats(3, 3000.0f) });
 		},
-		omp_netcode_read_spectator_sync,
-		[](const NetCode::Packet::PlayerSpectatorSync& c, const OmpNetcodeSpectatorSync& r)
+		[](const NetCode::Packet::PlayerSpectatorSync& c, const NetCode::Packet::PlayerSpectatorSync& r)
 		{
-			return c.LeftRight == r.leftRight && c.UpDown == r.upDown && c.Keys == r.keys && same(c.Position, r.position);
+			return c.LeftRight == r.LeftRight && c.UpDown == r.UpDown && c.Keys == r.Keys && same(c.Position, r.Position);
 		});
 }
 
 TEST_CASE(netcode_vehicle_sync_matches_cpp)
 {
-	differential<NetCode::Packet::PlayerVehicleSync, OmpNetcodeVehicleSync>(
+	differential<NetCode::Packet::PlayerVehicleSync>(
 		[](Rng& rng)
 		{
 			return build(rng, { U16, U16, U16, U16, floats(4, 1.0f), floats(3, 3000.0f), floats(3, 60.0f), floats(1, 1000.0f), U8, U8, U8, U8, U8, U16, U32 });
 		},
-		omp_netcode_read_vehicle_sync,
-		[](const NetCode::Packet::PlayerVehicleSync& c, const OmpNetcodeVehicleSync& r)
+		[](const NetCode::Packet::PlayerVehicleSync& c, const NetCode::Packet::PlayerVehicleSync& r)
 		{
-			return c.VehicleID == r.vehicleID && c.LeftRight == r.leftRight && c.UpDown == r.upDown && c.Keys == r.keys
-				&& same(c.Rotation, r.rotation) && same(c.Position, r.position) && same(c.Velocity, r.velocity) && sameBits(c.Health, r.health)
-				&& same(c.PlayerHealthArmour, r.playerHealthArmour) && c.AdditionalKeyWeapon == r.additionalKeyWeapon
-				&& c.Siren == r.siren && c.LandingGear == r.landingGear && c.TrailerID == r.trailerID && c.HydraThrustAngle == r.hydraThrustAngle;
+			return c.VehicleID == r.VehicleID && c.LeftRight == r.LeftRight && c.UpDown == r.UpDown && c.Keys == r.Keys
+				&& same(c.Rotation, r.Rotation) && same(c.Position, r.Position) && same(c.Velocity, r.Velocity) && sameBits(c.Health, r.Health)
+				&& same(c.PlayerHealthArmour, r.PlayerHealthArmour) && c.AdditionalKeyWeapon == r.AdditionalKeyWeapon
+				&& c.Siren == r.Siren && c.LandingGear == r.LandingGear && c.TrailerID == r.TrailerID && c.HydraThrustAngle == r.HydraThrustAngle;
 		});
 }
 
 TEST_CASE(netcode_passenger_sync_matches_cpp)
 {
-	differential<NetCode::Packet::PlayerPassengerSync, OmpNetcodePassengerSync>(
+	differential<NetCode::Packet::PlayerPassengerSync>(
 		[](Rng& rng)
 		{
 			return build(rng, { U16, U16, U8, U8, U16, U16, U16, floats(3, 3000.0f) });
 		},
-		omp_netcode_read_passenger_sync,
-		[](const NetCode::Packet::PlayerPassengerSync& c, const OmpNetcodePassengerSync& r)
+		[](const NetCode::Packet::PlayerPassengerSync& c, const NetCode::Packet::PlayerPassengerSync& r)
 		{
-			return c.VehicleID == r.vehicleID && c.DriveBySeatAdditionalKeyWeapon == r.driveBySeatAdditionalKeyWeapon && c.Keys == r.keys
-				&& same(c.HealthArmour, r.healthArmour) && c.LeftRight == r.leftRight && c.UpDown == r.upDown && same(c.Position, r.position);
+			return c.VehicleID == r.VehicleID && c.DriveBySeatAdditionalKeyWeapon == r.DriveBySeatAdditionalKeyWeapon && c.Keys == r.Keys
+				&& same(c.HealthArmour, r.HealthArmour) && c.LeftRight == r.LeftRight && c.UpDown == r.UpDown && same(c.Position, r.Position);
 		});
 }
 
 TEST_CASE(netcode_unoccupied_sync_matches_cpp)
 {
-	differential<NetCode::Packet::PlayerUnoccupiedSync, OmpNetcodeUnoccupiedSync>(
+	differential<NetCode::Packet::PlayerUnoccupiedSync>(
 		[](Rng& rng)
 		{
 			return build(rng, { U16, U8, floats(3, 1.0f), floats(3, 1.0f), floats(3, 3000.0f), floats(3, 60.0f), floats(3, 5.0f), floats(1, 1000.0f) });
 		},
-		omp_netcode_read_unoccupied_sync,
-		[](const NetCode::Packet::PlayerUnoccupiedSync& c, const OmpNetcodeUnoccupiedSync& r)
+		[](const NetCode::Packet::PlayerUnoccupiedSync& c, const NetCode::Packet::PlayerUnoccupiedSync& r)
 		{
-			return c.VehicleID == r.vehicleID && c.SeatID == r.seatID && same(c.Roll, r.roll) && same(c.Rotation, r.rotation)
-				&& same(c.Position, r.position) && same(c.Velocity, r.velocity) && same(c.AngularVelocity, r.angularVelocity) && sameBits(c.Health, r.health);
+			return c.VehicleID == r.VehicleID && c.SeatID == r.SeatID && same(c.Roll, r.Roll) && same(c.Rotation, r.Rotation)
+				&& same(c.Position, r.Position) && same(c.Velocity, r.Velocity) && same(c.AngularVelocity, r.AngularVelocity) && sameBits(c.Health, r.Health);
 		});
 }
 
 TEST_CASE(netcode_trailer_sync_matches_cpp)
 {
-	differential<NetCode::Packet::PlayerTrailerSync, OmpNetcodeTrailerSync>(
+	differential<NetCode::Packet::PlayerTrailerSync>(
 		[](Rng& rng)
 		{
 			return build(rng, { U16, floats(3, 3000.0f), floats(4, 1.0f), floats(3, 60.0f), floats(3, 5.0f) });
 		},
-		omp_netcode_read_trailer_sync,
-		[](const NetCode::Packet::PlayerTrailerSync& c, const OmpNetcodeTrailerSync& r)
+		[](const NetCode::Packet::PlayerTrailerSync& c, const NetCode::Packet::PlayerTrailerSync& r)
 		{
-			return c.VehicleID == r.vehicleID && same(c.Position, r.position) && same(c.Quat, r.quat) && same(c.Velocity, r.velocity) && same(c.TurnVelocity, r.turnVelocity);
+			return c.VehicleID == r.VehicleID && same(c.Position, r.Position) && same(c.Quat, r.Quat) && same(c.Velocity, r.Velocity) && same(c.TurnVelocity, r.TurnVelocity);
 		});
 }

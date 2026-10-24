@@ -11,6 +11,7 @@
 #include "player_impl.hpp"
 #include <Server/Components/Console/console.hpp>
 #include <Server/Components/NPCs/npcs.hpp>
+#include <netcode_rs.hpp>
 #include <utils.hpp>
 
 struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public PlayerUpdateEventHandler, public CoreEventHandler
@@ -674,7 +675,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::Packet::PlayerFootSync footSync;
-			if (!footSync.read(bs))
+			if (!NetCode::Rust::read(bs, footSync))
 			{
 				return false;
 			}
@@ -801,7 +802,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::Packet::PlayerSpectatorSync spectatorSync;
-			if (!spectatorSync.read(bs))
+			if (!NetCode::Rust::read(bs, spectatorSync))
 			{
 				return false;
 			}
@@ -855,7 +856,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::Packet::PlayerAimSync aimSync;
-			if (!aimSync.read(bs))
+			if (!NetCode::Rust::read(bs, aimSync))
 			{
 				return false;
 			}
@@ -907,7 +908,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::Packet::PlayerStatsSync statsSync;
-			if (!statsSync.read(bs))
+			if (!NetCode::Rust::read(bs, statsSync))
 			{
 				return false;
 			}
@@ -932,7 +933,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		{
 			NetCode::Packet::PlayerBulletSync bulletSync;
 			static int* isLagCompEnabled = self.core.getConfig().getInt("game.lag_compensation_mode");
-			if ((isLagCompEnabled && *isLagCompEnabled == LagCompMode_Disabled) || !bulletSync.read(bs))
+			if ((isLagCompEnabled && *isLagCompEnabled == LagCompMode_Disabled) || !NetCode::Rust::read(bs, bulletSync))
 			{
 				return false;
 			}
@@ -1121,7 +1122,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		{
 			NetCode::Packet::PlayerVehicleSync vehicleSync;
 
-			if (!self.vehiclesComponent || !vehicleSync.read(bs))
+			if (!self.vehiclesComponent || !NetCode::Rust::read(bs, vehicleSync))
 			{
 				return false;
 			}
@@ -1221,7 +1222,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		bool onReceive(IPlayer& peer, NetworkBitStream& bs) override
 		{
 			NetCode::Packet::PlayerWeaponsUpdate weaponsUpdatePacket;
-			if (!weaponsUpdatePacket.read(bs))
+			if (!NetCode::Rust::read(bs, weaponsUpdatePacket))
 			{
 				return false;
 			}
@@ -1370,7 +1371,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		{
 			NetCode::Packet::PlayerPassengerSync passengerSync;
 
-			if (!self.vehiclesComponent || !passengerSync.read(bs))
+			if (!self.vehiclesComponent || !NetCode::Rust::read(bs, passengerSync))
 			{
 				return false;
 			}
@@ -1473,7 +1474,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		{
 			NetCode::Packet::PlayerUnoccupiedSync unoccupiedSync;
 
-			if (!self.vehiclesComponent || !unoccupiedSync.read(bs))
+			if (!self.vehiclesComponent || !NetCode::Rust::read(bs, unoccupiedSync))
 			{
 				return false;
 			}
@@ -1554,7 +1555,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 		{
 			NetCode::Packet::PlayerTrailerSync trailerSync;
 
-			if (!self.vehiclesComponent || !trailerSync.read(bs))
+			if (!self.vehiclesComponent || !NetCode::Rust::read(bs, trailerSync))
 			{
 				return false;
 			}
