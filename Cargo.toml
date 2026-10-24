@@ -5,6 +5,7 @@
 resolver = "3"
 members = [
 	"Server/Components/Timers/rust",
+	"Server/Components/Variables/rust",
 ]
 
 [workspace.package]

@@ -5,3 +5,7 @@ version = 4
 [[package]]
 name = "omp-timers"
 version = "1.6.7"
+
+[[package]]
+name = "omp-variables"
+version = "1.6.7"

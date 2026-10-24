@@ -1,0 +1,11 @@
+[package]
+name = "omp-variables"
+description = "open.mp Variables component logic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "omp_variables"
+crate-type = ["staticlib", "rlib"]

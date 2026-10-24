@@ -6,154 +6,90 @@
  *  The original code is copyright (c) 2022, open.mp team and contributors.
  */
 
+#include "variables_rs.hpp"
 #include <Server/Components/Variables/variables.hpp>
 #include <sdk.hpp>
-#include <variant>
 
-using namespace Impl;
-
-char ascii_toupper_char(char c)
-{
-	return ('a' <= c && c <= 'z') ? c ^ 0x20 : c;
-}
-
-// Auto-vectorized toupper function
-// You can find out why this is being used in here: https://stackoverflow.com/a/37151084
-// Ours is probably going to be even faster since we don't have to use strlen;
-// Because string_view::length() already holds string length
-// TODO: Move this to somewhere more appropiate, we don't have shared utils yet.
-size_t strtoupper(String& dst, const StringView& src)
-{
-	size_t length = src.length();
-	dst.resize(length);
-	for (size_t i = 0; i < length; ++i)
-	{
-		dst[i] = ascii_toupper_char(src[i]);
-	}
-	return length;
-}
-
-#define TO_UPPER_KEY(dest, source) \
-	String dest;                   \
-	strtoupper(dest, source);
+// The variable storage lives in Rust (see `rust/`); this only adapts it to the SDK interfaces.
 
 template <class ToInherit>
 class VariableStorageBase : public ToInherit
 {
 private:
-	FlatHashMap<String, std::variant<int, String, float>> data_;
+	OmpVariablesStorage* const data_ = omp_variables_storage_new();
 
 public:
+	~VariableStorageBase()
+	{
+		omp_variables_storage_free(data_);
+	}
+
 	void setString(StringView key, StringView value) override
 	{
-		TO_UPPER_KEY(upperKey, key);
-		data_[upperKey].template emplace<String>(value);
+		omp_variables_set_string(data_, key.data(), key.length(), value.data(), value.length());
 	}
 
 	const StringView getString(StringView key) const override
 	{
-		TO_UPPER_KEY(upperKey, key);
-		auto it = data_.find(upperKey);
-		if (it == data_.end())
+		const char* ptr;
+		size_t len;
+		if (!omp_variables_get_string(data_, key.data(), key.length(), &ptr, &len))
 		{
 			return StringView();
 		}
-		if (it->second.index() != 1)
-		{
-			return StringView();
-		}
-		return StringView(std::get<String>(it->second));
+		return StringView(ptr, len);
 	}
 
 	void setInt(StringView key, int value) override
 	{
-		TO_UPPER_KEY(upperKey, key);
-		data_[upperKey].template emplace<int>(value);
+		omp_variables_set_int(data_, key.data(), key.length(), value);
 	}
 
 	int getInt(StringView key) const override
 	{
-		TO_UPPER_KEY(upperKey, key);
-		auto it = data_.find(upperKey);
-		if (it == data_.end())
-		{
-			return 0;
-		}
-		if (it->second.index() != 0)
-		{
-			return 0;
-		}
-		return std::get<int>(it->second);
+		return omp_variables_get_int(data_, key.data(), key.length());
 	}
 
 	void setFloat(StringView key, float value) override
 	{
-		TO_UPPER_KEY(upperKey, key);
-		data_[upperKey].template emplace<float>(value);
+		omp_variables_set_float(data_, key.data(), key.length(), value);
 	}
 
 	float getFloat(StringView key) const override
 	{
-		TO_UPPER_KEY(upperKey, key);
-		auto it = data_.find(upperKey);
-		if (it == data_.end())
-		{
-			return 0;
-		}
-		if (it->second.index() != 2)
-		{
-			return 0;
-		}
-		return std::get<float>(it->second);
+		return omp_variables_get_float(data_, key.data(), key.length());
 	}
 
 	VariableType getType(StringView key) const override
 	{
-		TO_UPPER_KEY(upperKey, key);
-		auto it = data_.find(upperKey);
-		if (it == data_.end())
-		{
-			return VariableType_None;
-		}
-		size_t index = it->second.index();
-		if (index == std::variant_npos)
-		{
-			return VariableType_None;
-		}
-		return VariableType(index + 1);
+		return VariableType(omp_variables_get_type(data_, key.data(), key.length()));
 	}
 
 	bool erase(StringView key) override
 	{
-		TO_UPPER_KEY(upperKey, key);
-		auto it = data_.find(upperKey);
-		if (it == data_.end())
-		{
-			return false;
-		}
-		data_.erase(it);
-		return true;
+		return omp_variables_erase(data_, key.data(), key.length());
 	}
 
 	bool getKeyAtIndex(int index, StringView& key) const override
 	{
-		auto it = std::next(data_.begin(), index);
-		if (it != data_.end())
+		const char* ptr;
+		size_t len;
+		if (!omp_variables_key_at(data_, index, &ptr, &len))
 		{
-			key = it->first;
-			return true;
+			return false;
 		}
-		return false;
+		key = StringView(ptr, len);
+		return true;
 	}
 
 	int size() const override
 	{
-		return data_.size();
+		return omp_variables_size(data_);
 	}
 
 	void clear()
 	{
-		data_.clear();
+		omp_variables_clear(data_);
 	}
 };
 
